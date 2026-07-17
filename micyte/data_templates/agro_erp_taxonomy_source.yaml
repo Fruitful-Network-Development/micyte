@@ -1,0 +1,57 @@
+template_id: agro_erp_taxonomy_source
+schema: mycite.v2.datum.agro_erp.taxonomy_source.v1
+sandbox: trapp_family_farm
+archetype: agro_erp_taxonomy_row
+description: >
+  Taxonomy source for the agro_erp sandbox. Each repeating row in
+  value-group 2 (layer 4) references the agro_erp anchor's
+  ``SAMRAS-babelette-txa_id`` (rf.3-1-1) for the taxonomy node
+  address and the ``title-babelette`` (rf.3-1-2) for the 512-bit
+  ASCII title. The runtime auto-composes the binary form from the
+  plain ASCII title (8 bits per char, right-padded to 512 bits,
+  matching bootstrap_agro_erp_anchor.py:_ascii_to_binary).
+
+# Header rows (layer 0). Sandbox-bound metadata is stamped once at
+# scaffold time so every materialised document carries it for audit.
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.agro_erp.taxonomy_source.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "trapp_family_farm"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+# Repeating archetype: every row in layer 4 (value-group 2 iteration)
+# is one taxonomy entry. The 4-tuple shape is
+#   [[<self-addr>, "rf.3-1-1", <node_address>, "rf.3-1-2", <title_binary>], [<title_ascii>]]
+# where:
+#   - rf.3-1-1 = SAMRAS-babelette-txa_id (the anchor's taxonomy node
+#     address space)
+#   - <node_address> = hyphen-form numeric path (e.g. "1-1-3-3-5-2")
+#   - rf.3-1-2 = title-babelette (niu-baciloid-256-64, i.e. 64 base-256
+#     digits = 64 ASCII bytes = 512 bits)
+#   - <title_binary> = the ASCII title encoded as 8 bits per character,
+#     right-padded with zeros to 512 bits
+#   - <title_ascii> = the plain ASCII title for human-facing rendering
+repeating_archetype:
+  layer: 4
+  value_group: 2
+  value_group_reference_design:
+    node_address:
+      magnitude_kind: trimmed_string
+      required: true
+      rf_anchor: "rf.3-1-1"
+    title_ascii:
+      magnitude_kind: trimmed_string
+      required: true
+      rf_anchor: "rf.3-1-2"
+      binary_companion:
+        field: title_binary
+        magnitude_kind: ascii_binary_512
+        auto_composed: true

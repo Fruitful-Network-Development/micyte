@@ -1,0 +1,89 @@
+template_id: product_profile
+schema: mycite.v2.datum.agro_erp.product_profile.v1
+sandbox: trapp_family_farm
+archetype: agro_erp_product_profile_row
+description: >
+  Product-profile source for the agro_erp sandbox. Each repeating row in
+  value-group 9 (layer 4) is one product (one breeding entry) and carries
+  nine (reference, magnitude) pairs: a product_id (LCL product leaf, typed
+  by the lcl id-babelette rf.3-1-5), a taxonomy_id (txa node, rf.3-1-1),
+  the four LCL classification references rotation_group / propagule /
+  genesis / ownership and a raunkiaerality life-form class (all rf.3-1-1
+  node addresses), and the two unit-magnitude pairs gestation (in seconds:
+  days x 86400, against the `second` abstraction 2-1-1) and spacing (in
+  centimetres, against the `centimeter` abstraction 2-1-3). Rows are built
+  by scripts/ingest_agro_erp_product_profiles.py from the raw breeding
+  YAML; this template documents that shape for the workbench/grid.
+
+# Header rows (layer 0). Sandbox-bound metadata is stamped once at
+# scaffold time so every materialised document carries it for audit.
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.agro_erp.product_profile.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "trapp_family_farm"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+# Repeating archetype: every row in layer 4 / value-group 9 is one product
+# entry, in the canonical PAIRS shape (list tail, head_len = 2*9 + 1 = 19):
+#   [[<self-addr>,
+#     "rf.3-1-5", <product_id>,        # LCL product leaf (1-3-1-N)
+#     "rf.3-1-1", <taxonomy_id>,       # txa node_addr (or "0" if unresolved)
+#     "rf.3-1-1", <rotation_group>,    # LCL 1-3-2-1-*
+#     "rf.3-1-1", <propagule>,         # LCL 1-3-2-2-*  (YAML field misspelled 'proegule')
+#     "rf.3-1-1", <genesis>,           # LCL 1-3-2-3-*
+#     "rf.3-1-1", <ownership>,         # LCL 1-3-2-4-*
+#     "rf.3-1-1", <raunkiaerality>,    # LCL 1-3-2-5-*  (therophyte/hemicryptophyte/phanerophytes)
+#     "2-1-1",    <gestation_seconds>, # against the `second` unit abstraction
+#     "2-1-3",    <spacing_cm>],       # against the `centimeter` unit abstraction
+#    [<product_key>]]                  # plain display label (the raw YAML key)
+# The `_0` "unspecified" classification ids (1_3_2_X_0) map to the parent
+# category node 1-3-2-X. Unit magnitudes reference the unit abstractions as
+# bare addresses (not rf. markers), mirroring how txa rows reference 2-0-1.
+repeating_archetype:
+  layer: 4
+  value_group: 9
+  value_group_reference_design:
+    product_id:
+      magnitude_kind: node_address
+      required: true
+      rf_anchor: "rf.3-1-5"
+    taxonomy_id:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    rotation_group:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    propagule:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    genesis:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    ownership:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    raunkiaerality:
+      magnitude_kind: node_address
+      required: false
+      rf_anchor: "rf.3-1-1"
+    gestation:
+      magnitude_kind: integer_magnitude
+      required: false
+      unit_ref: "2-1-1"
+    spacing:
+      magnitude_kind: integer_magnitude
+      required: false
+      unit_ref: "2-1-3"

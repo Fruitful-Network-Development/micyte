@@ -1,0 +1,66 @@
+[project]
+name = "micyte"
+version = "0.1.0"
+description = "A datum operating environment: a local MOS database, and an address on a shared network."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Fruitful Network Development" }]
+keywords = ["mos", "datum", "agriculture", "mycelial", "erp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+# Deliberately thin: two third-party deps, both load-bearing. pyyaml is the
+# document transport format; shapely is the geometry engine behind the HOPS
+# plot-packing / polygon code (micyte.core.hops.square_pack imports it at module
+# level, so it is a hard import-time dep, not optional). Notably NOT boto3 — that
+# absence is a useful smell test that the software carries no cloud coupling.
+dependencies = ["pyyaml>=6.0", "shapely>=2.0"]
+
+[project.urls]
+Homepage = "https://micyte.com"
+Source = "https://github.com/Fruitful-Network-Development/micyte"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["micyte"]
+
+[tool.hatch.build.targets.sdist]
+# The sdist carries the package, its licence, and the docs that ship with it.
+include = ["micyte", "LICENSE", "README.md", "docs/wiki", "docs/standards", "docs/contracts"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+# Enabled rule sets:
+#   E   pycodestyle errors
+#   F   pyflakes (unused imports, undefined names — the actual bug catchers)
+#   I   isort (import ordering)
+#   UP  pyupgrade (Python-version-aware syntax modernization)
+#   B   flake8-bugbear (common gotchas)
+#   RUF ruff-specific rules
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = [
+    "E501",   # line length — long URLs / comments fine
+    "B008",   # function call in default args — dataclass-defaults pattern
+    "RUF012", # mutable class defaults — false-positive on dataclass-style classes
+]
+allowed-confusables = ["×", "–"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ files deliberately re-export public surface via
+# `from .shell import *`; ruff cannot statically resolve the names.
+"micyte/**/__init__.py" = ["F403", "F405", "RUF022"]
+# shell.py is an aggregator that mirrors sibling modules via wildcard imports.
+"micyte/state_machine/portal_shell/shell.py" = ["F403", "F405"]
