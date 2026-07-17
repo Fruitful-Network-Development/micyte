@@ -1,0 +1,3 @@
+# Allowed Dependencies
+
+- `packages/core/`

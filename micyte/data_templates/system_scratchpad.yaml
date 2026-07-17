@@ -1,0 +1,36 @@
+template_id: system_scratchpad
+schema: mycite.v2.datum.system.scratchpad.v1
+sandbox: system
+archetype: system_scratchpad_row
+description: >
+  Baseline scratchpad template for the system sandbox. Materialises the
+  four standard header rows (schema, sandbox, msn_id, updated_at) and no
+  repeating archetype — the operator authors free-form datums via the
+  workbench Datum Composer (tuple mode or reference-list/group-0 mode)
+  once the document is scaffolded.
+
+  The system sandbox is the reflective corpus-wide view; documents
+  scaffolded here are ad-hoc operator notebooks, design notes, or
+  exploration scratchpads. There is no schema enforcement on the
+  repeating layer because the use cases are intentionally open-ended.
+
+# Header rows (layer 0). Sandbox-bound metadata stamped once at scaffold
+# time so every materialised document carries an audit trail.
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.system.scratchpad.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "system"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+# No repeating_archetype: the system scratchpad does not enforce a
+# value-group reference design. Datums authored via the workbench
+# Datum Composer can use any address shape and any magnitude or label
+# payload the operator needs.

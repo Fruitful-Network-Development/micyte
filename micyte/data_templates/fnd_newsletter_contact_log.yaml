@@ -1,0 +1,162 @@
+template_id: fnd_newsletter_contact_log
+schema: mycite.v2.datum.fnd.newsletter.contact_log.v2
+sandbox: grantee_legacy
+archetype: fnd_subscriber
+description: >
+  SAMRAS-form newsletter contact log for one FND-managed domain. Each
+  repeating row in layer 1 represents a single subscriber. Names and
+  emails are stored in BOTH ascii and bacillete-encoded binary forms
+  per the system anthology's name-babelette (3-1-4) and
+  email-babellette (3-1-9) structural slots. The *_confirmed booleans
+  attest lossless round-trip.
+
+  v2 supersedes v1 (which lacked binary forms and confirmation flags).
+
+# Header rows (layer 0).
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.fnd.newsletter.contact_log.v2"
+  - address: "0-0-2"
+    field: domain
+    raw: "{{domain}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+# Repeating archetype: every row in layer 1 is one subscriber.
+repeating_archetype:
+  layer: 1
+  value_group_reference_design:
+    email_ascii:
+      magnitude_kind: trimmed_string
+      required: true
+    email_binary:
+      magnitude_kind: octal_triple_string
+      required: true
+    email_confirmed:
+      magnitude_kind: boolean
+      required: true
+    name_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    name_binary:
+      magnitude_kind: hex_string
+      required: false
+    name_confirmed:
+      magnitude_kind: boolean
+      required: true
+    # Phase 15b: persist the split CSV columns alongside the composed
+    # ``name_ascii`` (which stays for one transition cycle so legacy
+    # readers keep working). The bacillete-encoded binary forms are
+    # only computed for the composed name field for now — first /
+    # middle / last fields are stored as plain ASCII.
+    first_name_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    middle_name_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    last_name_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    # Phase 16a: additional contact-detail magnitudes captured from
+    # website signup forms + the operator-side admin form. Phone and
+    # zip are free-form ASCII (no strict format check yet); signup
+    # date is the ISO-8601 ``YYYY-MM-DD`` token the operator can
+    # filter / sort on.
+    phone_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    zip_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    signup_date:
+      magnitude_kind: trimmed_string
+      required: false
+    # Phase 17a: Connect-form submissions persist the visitor's
+    # subject + message inline so the operator has the full record
+    # next to the contact entry. ``forward_status`` is one of
+    # ``sent`` / ``pending`` / ``failed`` / empty (the latter means
+    # this row didn't come from a Connect submission). Newsletter
+    # signups leave all three empty.
+    subject_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    message_ascii:
+      magnitude_kind: trimmed_string
+      required: false
+    forward_status:
+      magnitude_kind: trimmed_string
+      required: false
+    subscribed:
+      magnitude_kind: boolean
+      required: true
+    source:
+      magnitude_kind: trimmed_string
+      required: true
+    last_newsletter_sent_at:
+      magnitude_kind: iso8601_or_empty
+      required: true
+    send_count:
+      magnitude_kind: integer
+      required: true
+    created_at:
+      magnitude_kind: iso8601
+      required: false
+
+# CSV column → working magnitude name. Names prefixed with `_` are
+# scratch fields used only by the intake pipeline below; they get
+# composed into final magnitudes and then dropped before the row is
+# persisted.
+csv_column_map:
+  "First Name": first_name_ascii
+  "Middle Name": middle_name_ascii
+  "Last Name": last_name_ascii
+  "E-mail 1 - Value": email_ascii
+
+# Intake pipeline. The csv_intake module interprets these directives
+# in order against each CSV row's working dict. Directives that change
+# row state can also drop the row (returning None / sentinel).
+csv_intake_pipeline:
+  # Phase 15b: the split first/middle/last fields are persisted as
+  # first-class magnitudes. ``name_ascii`` is composed from them so
+  # legacy readers (which still look for the single field) keep working.
+  - join_name:
+      from: [first_name_ascii, middle_name_ascii, last_name_ascii]
+      to: name_ascii
+      separator: " "
+  - skip_if_email_in_name:
+      name_field: name_ascii
+      email_field: email_ascii
+  - normalize_email:
+      field: email_ascii
+      lowercase: true
+  - reject_invalid_email:
+      field: email_ascii
+  - bacillete_encode:
+      ascii: name_ascii
+      binary: name_binary
+      confirmed: name_confirmed
+      encoder: name
+  - bacillete_encode:
+      ascii: email_ascii
+      binary: email_binary
+      confirmed: email_confirmed
+      encoder: email
+  - drop_scratch_fields:
+      prefix: "_"
+  - default_field_values:
+      subscribed: true
+      source: "csv_import_2026-05-02"
+      last_newsletter_sent_at: ""
+      send_count: 0
+      # Phase 16a: stamp the CSV's intake date so back-filled rows
+      # have a meaningful signup_date instead of "today".
+      signup_date: "2026-05-02"
+  - dedupe:
+      key: email_ascii
+      keep: first
