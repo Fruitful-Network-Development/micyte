@@ -51,35 +51,35 @@ The authoritative datum store is a SQLite adapter keyed by a DB file path. Its
 constructor takes only a `db_file` plus an optional clock and the
 `allow_legacy_writes` flag — nothing about servers, networks, or hostnames:
 
-- `MyCiteV2/packages/adapters/sql/datum_store.py:117` —
+- `micyte/adapters/sql/datum_store.py:117` —
   `SqliteSystemDatumStoreAdapter.__init__(self, db_file, *, clock=None, allow_legacy_writes=False)`.
 - It implements the inward port contracts directly
   (`SystemDatumStorePort`, `AuthoritativeDatumDocumentMutationPort`,
   `PublicationTenantSummaryPort`, `PublicationProfileBasicsWritePort` —
-  `MyCiteV2/packages/adapters/sql/datum_store.py:111`).
+  `micyte/adapters/sql/datum_store.py:111`).
 
 The schema is self-materializing. Opening any DB path creates the parent
 directory and runs the schema script, so a *brand-new file* becomes a valid MOS
 authority on first open — exactly what a fresh desktop install needs:
 
-- `MyCiteV2/packages/adapters/sql/_sqlite.py:138` — `connect_sqlite()` does
+- `micyte/adapters/sql/_sqlite.py:138` — `connect_sqlite()` does
   `path.parent.mkdir(parents=True, exist_ok=True)`, `PRAGMA foreign_keys = ON`,
   `PRAGMA journal_mode = WAL`, then `executescript(SCHEMA_SQL)`.
 - The full MOS schema (`documents`, `datum_*_semantics`,
   `authoritative_catalog_snapshots`, `audit_records`, …) lives in
-  `MyCiteV2/packages/adapters/sql/_sqlite.py:9` onward.
+  `micyte/adapters/sql/_sqlite.py:9` onward.
 
 ### Multiple instances / multiple DBs are already supported
 
 Adapters are cached per resolved DB path, so the same process can address many
 authority DBs and a desktop install can simply point at its own file:
 
-- `MyCiteV2/instances/_shared/datum_store_accessor.py:17` —
+- `fnd_app/instances/_shared/datum_store_accessor.py:17` —
   `_DATUM_STORE_BY_AUTHORITY_DB: dict[str, SqliteSystemDatumStoreAdapter]`.
-- `MyCiteV2/instances/_shared/datum_store_accessor.py:26` —
+- `fnd_app/instances/_shared/datum_store_accessor.py:26` —
   `_datum_store_for_authority_db(authority_db_file)` resolves the path
   (`str(root.resolve())`) and caches one adapter per DB
-  (`MyCiteV2/instances/_shared/datum_store_accessor.py:39`).
+  (`fnd_app/instances/_shared/datum_store_accessor.py:39`).
 
 The live server install today is just one such DB, at
 `<instance-private-dir>/mos_authority.sqlite3`.
@@ -90,21 +90,21 @@ The live server install today is just one such DB, at
 environment only when no config is passed — so a desktop bootstrap can construct
 the config in-process and never touch the environment:
 
-- `MyCiteV2/instances/_shared/portal_host/app.py:1601` —
+- `fnd_app/instances/_shared/portal_host/app.py:1601` —
   `def create_app(config: V2PortalHostConfig | None = None) -> Flask`, with
   `host_config = config or V2PortalHostConfig.from_env()`.
 - The host stows the config on the app and serves its own bundled static JS and
   templates from paths relative to the module
-  (`MyCiteV2/instances/_shared/portal_host/app.py:1605`–`1612`), so there is no
+  (`fnd_app/instances/_shared/portal_host/app.py:1605`–`1612`), so there is no
   external asset server in the core request path.
 - Config carries the per-install authority DB explicitly:
   `V2PortalHostConfig.authority_db_file: Path | None`
-  (`MyCiteV2/instances/_shared/portal_host/app.py:587`), surfaced in `/healthz`
+  (`fnd_app/instances/_shared/portal_host/app.py:587`), surfaced in `/healthz`
   as `configured`/`exists`/`path`
-  (`MyCiteV2/instances/_shared/portal_host/app.py:840`–`842`).
+  (`fnd_app/instances/_shared/portal_host/app.py:840`–`842`).
 
 The front end is plain static JavaScript modules
-(`MyCiteV2/instances/_shared/portal_host/static/v2_portal_shell.js`,
+(`fnd_app/instances/_shared/portal_host/static/v2_portal_shell.js`,
 `v2_portal_shell_core.js`, `v2_portal_system_workspace.js`,
 `v2_portal_network_workspace.js`, …) — i.e. a WebView pointed at the local host
 gets the full UI with no build step.
@@ -114,14 +114,14 @@ gets the full UI with no build step.
 The ports layer is forbidden from importing adapters, tools, sandboxes, or
 instances, so the core never assumes a server:
 
-- `MyCiteV2/packages/ports/forbidden_dependencies.md` lists
-  `packages/adapters/`, `packages/tools/`, `packages/sandboxes/`, `instances/`,
+- `micyte/ports/forbidden_dependencies.md` lists
+  `packages/adapters/`, `micyte/tools/`, `packages/sandboxes/`, `instances/`,
   and "runtime path helpers" as forbidden.
-- `MyCiteV2/packages/ports/allowed_dependencies.md` restricts ports to
-  `packages/core/`, `packages/modules/`, and (only for explicit surface
-  contracts) `packages/state_machine/`.
+- `micyte/ports/allowed_dependencies.md` restricts ports to
+  `micyte/core/`, `packages/modules/`, and (only for explicit surface
+  contracts) `micyte/state_machine/`.
 - Network reads are themselves a port — `NetworkRootReadModelPort`
-  (`MyCiteV2/packages/ports/network_root_read_model/contracts.py:148`) — a pure
+  (`micyte/ports/network_root_read_model/contracts.py:148`) — a pure
   protocol over JSON-serializable request/result dataclasses, with no transport
   baked in.
 
@@ -129,14 +129,14 @@ instances, so the core never assumes a server:
 
 Each document row records both an `msn_id` and an `origin` discriminator:
 
-- `MyCiteV2/packages/adapters/sql/_sqlite.py:57` — `msn_id TEXT NOT NULL`.
-- `MyCiteV2/packages/adapters/sql/_sqlite.py:62` —
+- `micyte/adapters/sql/_sqlite.py:57` — `msn_id TEXT NOT NULL`.
+- `micyte/adapters/sql/_sqlite.py:62` —
   `origin TEXT NOT NULL DEFAULT 'local' CHECK (origin IN ('local','foreign'))`.
 
 So a local MOS already distinguishes documents it authored (`local`) from
 documents mirrored in from elsewhere (`foreign`), and the network workspace
 already renders a per-record **Linked Contract** view
-(`MyCiteV2/instances/_shared/portal_host/static/v2_portal_network_workspace.js:207`).
+(`fnd_app/instances/_shared/portal_host/static/v2_portal_network_workspace.js:207`).
 That is the hook a desktop install uses to join the network without giving up
 local authority. See
 [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
@@ -168,7 +168,7 @@ become priorities.
 The shell picks a per-user, writable, app-private path (e.g. an OS app-data
 directory) and passes it as `authority_db_file`. Because `connect_sqlite()`
 auto-creates the file, directory, and schema
-(`MyCiteV2/packages/adapters/sql/_sqlite.py:138`), first launch needs no
+(`micyte/adapters/sql/_sqlite.py:138`), first launch needs no
 migration step — the empty file *becomes* a valid MOS. The same datum/MOS rules,
 canonical-id posture, and L2 surface persistence apply unchanged
 (see [`20-l2-surface-persistence.md`](20-l2-surface-persistence.md)).
@@ -177,7 +177,7 @@ canonical-id posture, and L2 surface persistence apply unchanged
 
 An offline install is still a first-class network member: its documents carry an
 `msn_id` and `origin='local'` today
-(`MyCiteV2/packages/adapters/sql/_sqlite.py:57`,`:62`). The proposed flow:
+(`micyte/adapters/sql/_sqlite.py:57`,`:62`). The proposed flow:
 
 1. The install publishes a **contact card** (its msn identity + reachable
    address) into the network registry when, and only when, connectivity exists.
@@ -185,7 +185,7 @@ An offline install is still a first-class network member: its documents carry an
    `origin='foreign'` rows and shown via the existing **Linked Contract** panel
    (`…/v2_portal_network_workspace.js:207`).
 3. All exchange flows through the `NetworkRootReadModelPort` seam
-   (`MyCiteV2/packages/ports/network_root_read_model/contracts.py:148`) so the
+   (`micyte/ports/network_root_read_model/contracts.py:148`) so the
    transport (HTTP today, something else later) stays an adapter detail.
 
 Full design lives in
@@ -207,7 +207,7 @@ Full design lives in
 
 ### What `V2PortalHostConfig` already abstracts
 
-The host config (`MyCiteV2/instances/_shared/portal_host/app.py:578`) is a
+The host config (`fnd_app/instances/_shared/portal_host/app.py:578`) is a
 frozen dataclass with these fields a desktop bootstrap would set in-process
 instead of via env:
 

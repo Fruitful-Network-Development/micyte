@@ -11,9 +11,9 @@ a datum document, including top-down domino ordering, reference cascading, and
 magnitude-ordering restoration.
 
 This contract is upstream of:
-- `MyCiteV2/packages/core/datum_editing/__init__.py` (implementation)
-- `MyCiteV2/packages/adapters/sql/datum_semantics.py` (adapter layer)
-- `MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` (entry point)
+- `micyte/core/datum_editing/__init__.py` (implementation)
+- `micyte/adapters/sql/datum_semantics.py` (adapter layer)
+- `fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` (entry point)
 
 ---
 
@@ -173,19 +173,19 @@ pre-edit state.
 
 | Component | File | Lines |
 |---|---|---|
-| Pure edit functions | `MyCiteV2/packages/core/datum_editing/__init__.py` | all |
-| Insert/delete driver | `MyCiteV2/packages/adapters/sql/datum_semantics.py` | 463–573 |
-| SQL apply | `MyCiteV2/packages/adapters/sql/datum_store.py` | 761–818 |
-| Version identity | `MyCiteV2/packages/adapters/sql/datum_semantics.py` | 133–328 |
-| Workbench entry | `MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` | 180–199 |
-| Unit tests | `MyCiteV2/tests/unit/test_datum_editing.py` | all |
+| Pure edit functions | `micyte/core/datum_editing/__init__.py` | all |
+| Insert/delete driver | `micyte/adapters/sql/datum_semantics.py` | 463–573 |
+| SQL apply | `micyte/adapters/sql/datum_store.py` | 761–818 |
+| Version identity | `micyte/adapters/sql/datum_semantics.py` | 133–328 |
+| Workbench entry | `fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` | 180–199 |
+| Unit tests | `fnd_app/tests/unit/test_datum_editing.py` | all |
 
 ---
 
 ## Non-Goals
 
 - This contract does not define SAMRAS tree-level mutations (add_child, move_branch).
-  Those are governed by `MyCiteV2/packages/core/structures/samras/mutation.py`.
+  Those are governed by `micyte/core/structures/samras/mutation.py`.
 - This contract does not define cross-document reference resolution. References that
   cross document boundaries are out of scope for the iteration-shift algorithm.
 - This contract does not define the canonical form of datum payloads — only the

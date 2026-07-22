@@ -31,10 +31,10 @@ Each shell/tool refactor PR must include:
 
 At minimum, run:
 
-- `python -m unittest MyCiteV2.tests.unit.test_portal_shell_contract`
-- `python -m unittest MyCiteV2.tests.contracts.test_contract_docs_alignment`
-- `python -m unittest MyCiteV2.tests.architecture.test_portal_one_shell_boundaries`
-- `python -m unittest MyCiteV2.tests.architecture.test_portal_shell_stabilization_matrix`
+- `python -m unittest fnd_app.tests.unit.test_portal_shell_contract`
+- `python -m unittest fnd_app.tests.contracts.test_contract_docs_alignment`
+- `python -m unittest fnd_app.tests.architecture.test_portal_one_shell_boundaries`
+- `python -m unittest fnd_app.tests.architecture.test_portal_shell_stabilization_matrix`
 
 ## Route Matrix Scope
 

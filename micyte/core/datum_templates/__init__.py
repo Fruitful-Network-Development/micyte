@@ -44,7 +44,7 @@ from micyte.core.datum_documents import (
 _DATUM_TEMPLATE_SCHEMA = "mycite.v2.core.datum_template.v1"
 _ARCHETYPE_REPORT_SCHEMA = "mycite.v2.core.datum_template.archetype_report.v1"
 # Package-relative on purpose. This was parents[3]/"data"/"datum_templates" —
-# path arithmetic that walked out of the package to MyCiteV2/data/. It broke the
+# path arithmetic that walked out of the package to fnd_app/data/. It broke the
 # moment the tree moved, and it could never have shipped: a wheel contains the
 # package, so template data living outside it would simply be absent on any
 # install. parents[2] is the micyte package root.
@@ -281,7 +281,7 @@ def scaffold_from_template(
 
     Note: the caller must compute the canonical version_hash and rewrite
     ``document_id`` after rows are added — see
-    ``MyCiteV2.scripts.bootstrap_taxonomy_anchor`` for the placeholder →
+    ``fnd_app.scripts.bootstrap_taxonomy_anchor`` for the placeholder →
     real-hash idiom.
     """
     ctx = dict(context or {})

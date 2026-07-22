@@ -2,7 +2,7 @@
 
 > Status: design — **awaiting a model decision (see §3) before any migration code.**
 
-Goal: make the binary-MSS-sequence hash (`MyCiteV2/packages/core/mss/document_codec.py`,
+Goal: make the binary-MSS-sequence hash (`micyte/core/mss/document_codec.py`,
 `mss_document_hash`) the **canonical** document `version_hash` + hyphae form, replacing
 the `mos.mss_sha256_v1` JSON+SHA-256 stand-in. The maintainer asked to **verify
 conformance + design first**; this is that deliverable.

@@ -7,7 +7,7 @@ the per-domain raw NDJSON log: there is no second store behind it.
 
 Everything in this module is a **pure transform** over plain dicts — no I/O,
 no clock, no randomness. The filesystem adapter
-(:mod:`MyCiteV2.packages.adapters.filesystem.analytics_leaflet`) owns locking,
+(:mod:`fnd_app.packages.adapters.filesystem.analytics_leaflet`) owns locking,
 atomic writes, and buffering; the route owns request parsing. That split keeps
 the merge logic exhaustively unit-testable.
 

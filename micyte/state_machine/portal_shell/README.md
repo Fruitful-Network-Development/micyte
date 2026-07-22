@@ -2,7 +2,7 @@
 
 Authority: [../../../../docs/plans/v2-authority_stack.md](../../../../docs/plans/v2-authority_stack.md)
 
-`packages/state_machine/portal_shell/` owns the shared shell contracts for the
+`micyte/state_machine/portal_shell/` owns the shared shell contracts for the
 single V2 portal shell:
 
 - serialized shell action

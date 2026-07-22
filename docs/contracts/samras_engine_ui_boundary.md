@@ -39,5 +39,5 @@ CTS-GIS first tries decodable structure authorities, then falls back to row-base
 
 ## Authoritative Paths
 
-- `MyCiteV2/packages/core/structures/samras/`
-- `MyCiteV2/instances/_shared/runtime/portal_cts_gis_runtime.py`
+- `micyte/core/structures/samras/`
+- `fnd_app/instances/_shared/runtime/portal_cts_gis_runtime.py`

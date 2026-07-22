@@ -5,7 +5,7 @@ grantee-services leaflet adapters (contact, newsletter, campaign, donation,
 analytics, AWS) and re-exports all of them from its ``__init__``. Python executes
 a package's ``__init__`` before any submodule, so while this adapter lived there,
 
-    from MyCiteV2.packages.adapters.filesystem import FilesystemSystemDatumStoreAdapter
+    from fnd_app.packages.adapters.filesystem import FilesystemSystemDatumStoreAdapter
 
 — the one import MiCyte's SQL datum store needs — pulled FND's entire leaflet
 surface into MiCyte at import time (measured: 179 modules, 8 of them leaflet

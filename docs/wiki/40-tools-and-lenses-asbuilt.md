@@ -35,66 +35,66 @@ definition; LOC is the file's line count.
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/tools/_registry.py:19` | Global `TOOL_REGISTRY` dict (`tool_id` → `WorkbenchTool`). | 63 |
-| `MyCiteV2/packages/tools/_registry.py:22` | `register(tool)` — type-checks and inserts (overwrite by id). | — |
-| `MyCiteV2/packages/tools/_registry.py:41` | `all_tools()` — every tool, sorted by `tool_id`. | — |
-| `MyCiteV2/packages/tools/_registry.py:46` | `describe_for_palette()` — palette eligibility dicts. | — |
-| `MyCiteV2/packages/tools/_contract.py:20` | `WorkbenchTool` runtime-checkable Protocol: `tool_id`/`label`/`summary`/`route`/`applies_to_*` + `build_panel_payload`. | 51 |
-| `MyCiteV2/packages/tools/__init__.py:18` | Imports each tool module for self-registration side-effect. | 35 |
-| `MyCiteV2/packages/tools/_shared/README.md:1` | Empty placeholder stub for shared tool contracts/helpers. | 3 |
+| `micyte/tools/_registry.py:19` | Global `TOOL_REGISTRY` dict (`tool_id` → `WorkbenchTool`). | 63 |
+| `micyte/tools/_registry.py:22` | `register(tool)` — type-checks and inserts (overwrite by id). | — |
+| `micyte/tools/_registry.py:41` | `all_tools()` — every tool, sorted by `tool_id`. | — |
+| `micyte/tools/_registry.py:46` | `describe_for_palette()` — palette eligibility dicts. | — |
+| `micyte/tools/_contract.py:20` | `WorkbenchTool` runtime-checkable Protocol: `tool_id`/`label`/`summary`/`route`/`applies_to_*` + `build_panel_payload`. | 51 |
+| `micyte/tools/__init__.py:18` | Imports each tool module for self-registration side-effect. | 35 |
+| `micyte/tools/_shared/README.md:1` | Empty placeholder stub for shared tool contracts/helpers. | 3 |
 
 ### Tools — concrete renderers
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/tools/workbench_ui_view.py:30` | `WorkbenchUiTool` palette entry; `applies_to_source_kind=("sandbox_source","system_anthology")`, no archetype. Navigates to its surface rather than painting the panel. | 71 |
-| `MyCiteV2/packages/tools/product_document_view.py:130` | `ProductDocumentViewer`; `applies_to_archetype=("agro_erp_product_profile_row",)`, no source-kind. Resolves product/taxonomy names cross-document. | 253 |
-| `MyCiteV2/packages/tools/product_document_view.py:72` | `LclNameIndex` — `node_address → display name` from `4-2-*` rows; falls back to `BinaryTextLens.decode` of the 512-bit title. | — |
-| `MyCiteV2/packages/tools/workbench_ui/service.py:468` | `WorkbenchUiReadService` — ~900-LOC read-only spreadsheet builder. | 992 |
-| `MyCiteV2/packages/tools/workbench_ui/README.md:1` | Ownership note: read-only two-pane SQL spreadsheet; overlays additive only. | 5 |
+| `micyte/tools/workbench_ui_view.py:30` | `WorkbenchUiTool` palette entry; `applies_to_source_kind=("sandbox_source","system_anthology")`, no archetype. Navigates to its surface rather than painting the panel. | 71 |
+| `micyte/tools/product_document_view.py:130` | `ProductDocumentViewer`; `applies_to_archetype=("agro_erp_product_profile_row",)`, no source-kind. Resolves product/taxonomy names cross-document. | 253 |
+| `micyte/tools/product_document_view.py:72` | `LclNameIndex` — `node_address → display name` from `4-2-*` rows; falls back to `BinaryTextLens.decode` of the 512-bit title. | — |
+| `micyte/tools/workbench_ui/service.py:468` | `WorkbenchUiReadService` — ~900-LOC read-only spreadsheet builder. | 992 |
+| `micyte/tools/workbench_ui/README.md:1` | Ownership note: read-only two-pane SQL spreadsheet; overlays additive only. | 5 |
 
 ### Tool eligibility & shell registry
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:64` | `recognize_applicable_tools` — pure archetype/source-kind intersection, widened via `derive_hyphae_chain`. | 115 |
-| `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:44` | `_document_archetype_set` — doc metadata archetype + per-row archetypes reached through the chain. | — |
-| `MyCiteV2/packages/state_machine/portal_shell/shell_registry.py:141` | `build_portal_tool_registry_entries` — the shell-side tool registry (workbench_ui, agro_erp, extensions). | 310 |
-| `MyCiteV2/packages/state_machine/portal_shell/shell_registry.py:165` | `workbench_ui` entry; `applies_to_source_kind=("sandbox_source","system_anthology")`. | — |
-| `MyCiteV2/packages/state_machine/portal_shell/shell_registry.py:160` | `agro_erp` entry; `applies_to_archetype=("agro_erp_taxonomy_row",)`. | — |
+| `micyte/state_machine/portal_shell/tool_eligibility.py:64` | `recognize_applicable_tools` — pure archetype/source-kind intersection, widened via `derive_hyphae_chain`. | 115 |
+| `micyte/state_machine/portal_shell/tool_eligibility.py:44` | `_document_archetype_set` — doc metadata archetype + per-row archetypes reached through the chain. | — |
+| `micyte/state_machine/portal_shell/shell_registry.py:141` | `build_portal_tool_registry_entries` — the shell-side tool registry (workbench_ui, agro_erp, extensions). | 310 |
+| `micyte/state_machine/portal_shell/shell_registry.py:165` | `workbench_ui` entry; `applies_to_source_kind=("sandbox_source","system_anthology")`. | — |
+| `micyte/state_machine/portal_shell/shell_registry.py:160` | `agro_erp` entry; `applies_to_archetype=("agro_erp_taxonomy_row",)`. | — |
 
 ### Lenses
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/state_machine/lens/base.py:13` | `Lens` ABC — `decode`/`encode`/`validate_display`. | 145 |
-| `MyCiteV2/packages/state_machine/lens/base.py:31` | Built-ins: Identity / TrimmedString / SamrasTitle / EmailAddress / SecretReference / NumericHyphen / BinaryText. | — |
-| `MyCiteV2/packages/state_machine/lens/base.py:115` | `BinaryTextLens.decode` — binary → printable ASCII, `"{n} bits"` fallback. | — |
-| `MyCiteV2/packages/state_machine/lens/registry.py:25` | `DatumLensRegistry` — family → overlay → value-kind dispatch. | 86 |
-| `MyCiteV2/packages/state_machine/lens/registry.py:73` | `resolve_datum_lens(...)` module helper over the default registry. | — |
-| `MyCiteV2/packages/state_machine/lens/__init__.py:1` | Re-exports lenses + `resolve_datum_lens`. | 33 |
-| `MyCiteV2/packages/state_machine/lens/README.md:1` | Lens authority note + built-in baselines + usage pattern. | 47 |
+| `micyte/state_machine/lens/base.py:13` | `Lens` ABC — `decode`/`encode`/`validate_display`. | 145 |
+| `micyte/state_machine/lens/base.py:31` | Built-ins: Identity / TrimmedString / SamrasTitle / EmailAddress / SecretReference / NumericHyphen / BinaryText. | — |
+| `micyte/state_machine/lens/base.py:115` | `BinaryTextLens.decode` — binary → printable ASCII, `"{n} bits"` fallback. | — |
+| `micyte/state_machine/lens/registry.py:25` | `DatumLensRegistry` — family → overlay → value-kind dispatch. | 86 |
+| `micyte/state_machine/lens/registry.py:73` | `resolve_datum_lens(...)` module helper over the default registry. | — |
+| `micyte/state_machine/lens/__init__.py:1` | Re-exports lenses + `resolve_datum_lens`. | 33 |
+| `micyte/state_machine/lens/README.md:1` | Lens authority note + built-in baselines + usage pattern. | 47 |
 
 ### Palette runtime & front-end
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/instances/_shared/runtime/portal_palette_runtime.py:80` | `build_eligible_tools_response` — tools for the selected document. | 243 |
-| `MyCiteV2/instances/_shared/runtime/portal_palette_runtime.py:169` | `build_sandbox_visualizers_response` — visualizers across a whole sandbox, ranked by reach. | — |
-| `MyCiteV2/instances/_shared/runtime/portal_palette_runtime.py:59` | `_viz_tool_matches` — empty `applies_to_*` ⇒ universal; empty context ⇒ all tools. | — |
-| `MyCiteV2/instances/_shared/portal_host/app.py:1707` | Flask `GET /portal/api/tools/eligible`. | — |
-| `MyCiteV2/instances/_shared/portal_host/app.py:1732` | Flask `GET /portal/api/visualizers/for-sandbox`. | — |
-| `MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js:177` | `mount` — search input + result list. | 208 |
-| `MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js:159` | `refresh` — fetches eligible/for-sandbox, filters, renders. | — |
-| `MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js:120` | `renderList` — dropdown items; click dispatches `{tool_id, route, ...}`. | — |
+| `fnd_app/instances/_shared/runtime/portal_palette_runtime.py:80` | `build_eligible_tools_response` — tools for the selected document. | 243 |
+| `fnd_app/instances/_shared/runtime/portal_palette_runtime.py:169` | `build_sandbox_visualizers_response` — visualizers across a whole sandbox, ranked by reach. | — |
+| `fnd_app/instances/_shared/runtime/portal_palette_runtime.py:59` | `_viz_tool_matches` — empty `applies_to_*` ⇒ universal; empty context ⇒ all tools. | — |
+| `fnd_app/instances/_shared/portal_host/app.py:1707` | Flask `GET /portal/api/tools/eligible`. | — |
+| `fnd_app/instances/_shared/portal_host/app.py:1732` | Flask `GET /portal/api/visualizers/for-sandbox`. | — |
+| `fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js:177` | `mount` — search input + result list. | 208 |
+| `fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js:159` | `refresh` — fetches eligible/for-sandbox, filters, renders. | — |
+| `fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js:120` | `renderList` — dropdown items; click dispatches `{tool_id, route, ...}`. | — |
 
 ### Tests (context)
 
 | Path | Role | LOC |
 |---|---|---|
-| `MyCiteV2/tests/unit/test_tool_eligibility.py:101` | Eligibility intersection + hyphae-chain widening + extension exclusion. | 218 |
-| `MyCiteV2/tests/unit/test_state_machine_lens_registry.py:14` | `BinaryTextLens` ASCII decode + family/value-kind preference. | 31 |
-| `MyCiteV2/tests/architecture/test_palette_eligibility_purity.py:75` | AST-scans `tool_eligibility.py` for I/O imports — enforces purity. | 138 |
+| `fnd_app/tests/unit/test_tool_eligibility.py:101` | Eligibility intersection + hyphae-chain widening + extension exclusion. | 218 |
+| `fnd_app/tests/unit/test_state_machine_lens_registry.py:14` | `BinaryTextLens` ASCII decode + family/value-kind preference. | 31 |
+| `fnd_app/tests/architecture/test_palette_eligibility_purity.py:75` | AST-scans `tool_eligibility.py` for I/O imports — enforces purity. | 138 |
 
 ## How it works
 
@@ -109,7 +109,7 @@ method. There is no base class to subclass — `register()` only checks
 
 Tools self-register by calling `register(MyTool())` at module scope; the
 package `__init__.py` imports each tool module purely for that side-effect
-(`__init__.py:18`), so importing `MyCiteV2.packages.tools` populates
+(`__init__.py:18`), so importing `micyte.tools` populates
 `TOOL_REGISTRY`. `all_tools()` returns them sorted by `tool_id` for stable
 ordering (`_registry.py:43`). Two concrete tools ship today:
 
@@ -130,7 +130,7 @@ ordering (`_registry.py:43`). Two concrete tools ship today:
   decode 512-bit binary titles.
 
 > Note: there are **two** registries. The lightweight `WorkbenchTool` registry
-> above (`packages/tools`) is what the palette runtime consults. A separate,
+> above (`micyte/tools`) is what the palette runtime consults. A separate,
 > richer shell-side registry of `PortalToolRegistryEntry` objects is built by
 > `build_portal_tool_registry_entries` (`shell_registry.py:141`) and consumed
 > by `recognize_applicable_tools`. The two are kept in sync by hand — e.g. the
@@ -256,7 +256,7 @@ URL query parameter.
 ## Open questions
 
 - **Which registry is canonical?** The lightweight `WorkbenchTool` registry
-  (`packages/tools`) and the shell `PortalToolRegistryEntry` registry
+  (`micyte/tools`) and the shell `PortalToolRegistryEntry` registry
   (`shell_registry.py:141`) carry overlapping but separately-maintained
   eligibility metadata. A future hyphae-flag binding would need a single
   source of truth.

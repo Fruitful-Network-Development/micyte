@@ -172,7 +172,7 @@ For service tools, the standard layout is:
   - `listing` — tabular data (events, orders, contacts)
   - `profile` — full entity profile (if applicable)
 
-**Frame builders** from `MyCiteV2/packages/state_machine/nimm/mediate_handlers.py`:
+**Frame builders** from `micyte/state_machine/nimm/mediate_handlers.py`:
 
 | Builder | Use case |
 |---|---|
@@ -331,9 +331,9 @@ FND-CSM satisfies all sections of this contract:
 
 | Component | File |
 |---|---|
-| Bundle builder | `MyCiteV2/instances/_shared/runtime/portal_fnd_csm_runtime.py` |
-| JS workspace | `MyCiteV2/instances/_shared/portal_host/static/v2_portal_fnd_csm_workspace.js` |
-| Frame builders | `MyCiteV2/packages/state_machine/nimm/mediate_handlers.py` |
-| Shell constants | `MyCiteV2/packages/state_machine/portal_shell/shell_schemas.py` |
-| Shell registry | `MyCiteV2/packages/state_machine/portal_shell/shell_registry.py` |
-| Tests | `MyCiteV2/tests/unit/test_portal_fnd_csm_runtime.py` |
+| Bundle builder | `fnd_app/instances/_shared/runtime/portal_fnd_csm_runtime.py` |
+| JS workspace | `fnd_app/instances/_shared/portal_host/static/v2_portal_fnd_csm_workspace.js` |
+| Frame builders | `micyte/state_machine/nimm/mediate_handlers.py` |
+| Shell constants | `micyte/state_machine/portal_shell/shell_schemas.py` |
+| Shell registry | `micyte/state_machine/portal_shell/shell_registry.py` |
+| Tests | `fnd_app/tests/unit/test_portal_fnd_csm_runtime.py` |

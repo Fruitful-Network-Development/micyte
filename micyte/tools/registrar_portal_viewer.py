@@ -28,6 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from micyte.core.datum_ops import field_registry as _fr
 from micyte.state_machine.portal_shell.shell_schemas import (
     REGISTRAR_SANDBOX_TOKEN as _REGISTRAR,
 )
@@ -55,7 +56,7 @@ _FOCUS_PARAM = "registrar_profile"
 _CREATE_ROUTE = "/portal/api/v2/agro/create_ag_profile"
 _SAVE_ROUTE = "/portal/api/v2/agro/save_ag_profile"
 _ENTITY_DOC_NAMES = ("legal_entity", "administrative_entity", "natural_entity")
-_NAME_PART = "rf.3-1-4"  # natural_entity given/family name parts
+_NAME_PART = _fr.marker(_fr.REGISTRAR, "ruiqi_id")  # rf.3-1-4 — natural_entity given/family name parts
 
 # ag-profile TYPE options (lcl 1-2-N) offered when creating / editing a profile. Value is
 # the lcl node written to rf.3-1-13; the map derives the substance glyph + section from it.

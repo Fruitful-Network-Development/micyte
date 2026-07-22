@@ -14,7 +14,7 @@ are intentional forward references.
 
 ## 1. Mission
 
-MiCyte Portal (`MyCiteV2/`) is a hexagonal Python stack that turns a
+MiCyte Portal (`fnd_app/`) is a hexagonal Python stack that turns a
 single ontological datum-database — the **MOS** (Mycelial Ontological Schema) —
 into a document-processor-style workspace. Datums are addressed
 `<layer>-<value_group>-<iteration>`; primitive "rudi" datums (`0-0-*`) are the
@@ -37,60 +37,60 @@ the stubbed future-network tier, each annotated with the real package paths that
 implement (or scaffold) them. All paths below exist on disk.
 
 ```
-                         MyCiteV2/  (hexagonal Python stack)
- ┌───────────────────────────────────────────────────────────────────────────┐
- │ L3 UI — runtime shell, workbook materialization, panels                     │
- │   packages/state_machine/portal_shell/   (shell composition, tool eligibility)
- │   packages/tools/workbench_ui/           (READ path: SQL → JSON projection)  │
- │   instances/_shared/portal_host/         (app.py, templates, static JS)      │
- │   instances/_shared/runtime/             (WRITE path: workbook → MOS-save)    │
- ├───────────────────────────────────────────────────────────────────────────┤
- │ L2 SURFACE — datum-document persistence, MSS form, canonical naming         │
- │   packages/adapters/sql/datum_semantics.py  (the real address/hyphae/MSS engine)
- │   packages/adapters/sql/                  (SQLite-backed MOS adapter)         │
- │   packages/core/document_naming/          (canonical lv./stl./cptr. doc IDs) │
- ├───────────────────────────────────────────────────────────────────────────┤
- │ L1 CORE — lean MOS datum library: addresses, rudis, hyphae, structures      │
- │   packages/core/mss/                      (datum_identity: hyphae chain)      │
- │   packages/core/datum_ops/                (ops/node_ops, workbook codec)      │
- │   packages/core/datum_io/                 (WORKBOOK-YAML codec, transport)    │
- │   packages/core/structures/samras/        (SAMRAS structural model)          │
- │   packages/core/structures/hops/          (HOPS coordinate decode)           │
- │   packages/ports/datum_store/             (authoritative datum-doc port)      │
- ├───────────────────────────────────────────────────────────────────────────┤
- │ ⟂ CROSS-CUT: TOOLS & LENSES                                                  │
- │   packages/state_machine/portal_shell/tool_eligibility.py (tool ↔ hyphae)    │
- │   packages/state_machine/lens/registry.py (lens ↔ family / value_kind)       │
- │   instances/_shared/portal_host/static/v2_portal_tool_palette.js (menu-bar)  │
- ├───────────────────────────────────────────────────────────────────────────┤
- │ ⌛ FUTURE NETWORK (stubbed — 1-LOC inert scaffolds today)                     │
- │   packages/core/crypto/                   (asymmetric/symmetric key material)│
- │   packages/modules/domains/contracts/     (Manager/Subordinate contracts)    │
- │   packages/modules/domains/reference_exchange/ (resource sharing)            │
- │   packages/sandboxes/orchestration/, packages/sandboxes/system/              │
- │   packages/state_machine/mediation_surface/                                  │
- │   packages/tools/_shared/                                                    │
- │   packages/core/network_root_surface_query.py (network read-model query norm)│
- └───────────────────────────────────────────────────────────────────────────┘
+       MiCyte Portal — fnd_app/ (UI + instances) runs on micyte/ (the core wheel)       
+ ┌──────────────────────────────────────────────────────────────────────────────────────┐
+ │ L3 UI — runtime shell, workbook materialization, panels                              │
+ │   micyte/state_machine/portal_shell/      (shell composition, tool eligibility)      │
+ │   micyte/tools/workbench_ui/              (READ path: SQL → JSON projection)         │
+ │   fnd_app/instances/_shared/portal_host/  (app.py, templates, static JS)             │
+ │   fnd_app/instances/_shared/runtime/      (WRITE path: workbook → MOS-save)          │
+ ├──────────────────────────────────────────────────────────────────────────────────────┤
+ │ L2 SURFACE — datum-document persistence, MSS form, canonical naming                  │
+ │   micyte/adapters/sql/datum_semantics.py  (the real address/hyphae/MSS engine)       │
+ │   micyte/adapters/sql/                    (SQLite-backed MOS adapter)                │
+ │   micyte/core/document_naming/            (canonical lv./stl./cptr. doc IDs)         │
+ ├──────────────────────────────────────────────────────────────────────────────────────┤
+ │ L1 CORE — lean MOS datum library: addresses, rudis, hyphae, structures               │
+ │   micyte/core/mss/                        (datum_identity: hyphae chain)             │
+ │   micyte/core/datum_ops/                  (ops/node_ops, workbook codec)             │
+ │   micyte/core/datum_io/                   (WORKBOOK-YAML codec, transport)           │
+ │   micyte/core/structures/samras/          (SAMRAS structural model)                  │
+ │   micyte/core/structures/hops/            (HOPS coordinate decode)                   │
+ │   micyte/ports/datum_store/               (authoritative datum-doc port)             │
+ ├──────────────────────────────────────────────────────────────────────────────────────┤
+ │ ⟂ CROSS-CUT: TOOLS & LENSES                                                          │
+ │   micyte/state_machine/portal_shell/tool_eligibility.py  (tool ↔ hyphae)             │
+ │   micyte/state_machine/lens/registry.py   (lens ↔ family / value_kind)               │
+ │   fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js  (menu-bar) │
+ ├──────────────────────────────────────────────────────────────────────────────────────┤
+ │ ⌛ FUTURE NETWORK (stubbed — 1-LOC inert scaffolds today)                             │
+ │   micyte/core/crypto/                     (asymmetric/symmetric key material)        │
+ │   micyte/domains/contracts/               (Manager/Subordinate contracts)            │
+ │   micyte/domains/reference_exchange/      (resource sharing)                         │
+ │   fnd_app/packages/sandboxes/orchestration/, .../system/                             │
+ │   micyte/state_machine/mediation_surface/                                            │
+ │   micyte/tools/_shared/                                                              │
+ │   micyte/core/network_root_surface_query.py  (network read-model query norm)         │
+ └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Two as-built facts to keep in mind while reading the rest of the wiki (both are
 covered in depth in the delta map):
 
 - **core→adapter inversion.** The real address/hyphae/MSS engine lives in the
-  *adapter* layer (`MyCiteV2/packages/adapters/sql/datum_semantics.py`, 663 LOC,
+  *adapter* layer (`micyte/adapters/sql/datum_semantics.py`, 663 LOC,
   importing only `ports/datum_store`), and `core/datum_ops` imports *up* into it
-  (`MyCiteV2/packages/core/datum_ops/ops.py:24`,
-  `MyCiteV2/packages/core/datum_ops/node_ops.py:17`). A near-duplicate identity
-  helper in `MyCiteV2/packages/core/mss/datum_identity.py` is used only by
+  (`micyte/core/datum_ops/ops.py:24`,
+  `micyte/core/datum_ops/node_ops.py:17`). A near-duplicate identity
+  helper in `micyte/core/mss/datum_identity.py` is used only by
   `tool_eligibility.py` and tests.
 - **materialization split.** The WORKBOOK-YAML codec
-  (`MyCiteV2/packages/core/datum_io/codec.py`,
-  `MyCiteV2/packages/core/datum_ops/workbook.py`, both explicitly "transport
+  (`micyte/core/datum_io/codec.py`,
+  `micyte/core/datum_ops/workbook.py`, both explicitly "transport
   only") drives the **write** path
-  (`MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`),
+  (`fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`),
   while the **read** path projects SQL straight to JSON
-  (`MyCiteV2/packages/tools/workbench_ui/service.py`).
+  (`micyte/tools/workbench_ui/service.py`).
 
 ---
 
@@ -142,31 +142,31 @@ overlap, the contract is canonical — this glossary is orientation.
 - **datum** — the atomic unit of meaning in MOS. A datum is one row in a datum
   document, carrying a `datum_address`, a `raw` payload, and references to other
   datums. Rows are modeled by `AuthoritativeDatumDocumentRow` in
-  `MyCiteV2/packages/ports/datum_store/` and processed throughout
-  `MyCiteV2/packages/adapters/sql/datum_semantics.py`.
+  `micyte/ports/datum_store/` and processed throughout
+  `micyte/adapters/sql/datum_semantics.py`.
 
 - **datum address** — the `<layer>-<value_group>-<iteration>` triple identifying a
   datum (e.g. `0-0-1`, `3-1-4`). Parsing/formatting/sort-key helpers live in
-  `MyCiteV2/packages/core/mss/datum_identity.py:34` (`_parse_datum_address`) and
-  the adapter engine `MyCiteV2/packages/adapters/sql/datum_semantics.py:18`
+  `micyte/core/mss/datum_identity.py:34` (`_parse_datum_address`) and
+  the adapter engine `micyte/adapters/sql/datum_semantics.py:18`
   (`_DATUM_ADDRESS_RE`).
 
 - **rudi datum** — a primitive base datum at `layer=0, value_group=0`
   (`0-0-*`). Rudis are the alphabet that complex datums abstract; the hyphae chain
   is expressed entirely in rudi addresses. See the `(0, 0)` test in
-  `MyCiteV2/packages/core/mss/datum_identity.py:163` (`rudi_in_doc`).
+  `micyte/core/mss/datum_identity.py:163` (`rudi_in_doc`).
 
 - **hyphae value** — the full transitive dependency closure of a datum, expressed
   as its rudi chain. `derive_hyphae_chain` returns `[0-0-1, ..., 0-0-K]`, where K
   is the highest rudi iteration reachable in the closure, including every position
-  in between — `MyCiteV2/packages/core/mss/datum_identity.py:126`. This is the
+  in between — `micyte/core/mss/datum_identity.py:126`. This is the
   identity a tool can bind against.
 
 - **MSS form** (Mycelial Single-Sequence) — the canonical single-sequence encoding
   of one or more top-level datums (address size, bitmap, start/stop slices). MSS
   hashing and the `mos.mss_sha256_v1` version policy are in
-  `MyCiteV2/packages/adapters/sql/datum_semantics.py:14` and
-  `compute_mss_hash` at `MyCiteV2/packages/core/mss/datum_identity.py:101`. See
+  `micyte/adapters/sql/datum_semantics.py:14` and
+  `compute_mss_hash` at `micyte/core/mss/datum_identity.py:101`. See
   [`61-mss-and-hyphae-form-spec.md`](61-mss-and-hyphae-form-spec.md).
 
 - **hyphae form** — the same MSS machinery plus a preprocessing step that excludes
@@ -174,34 +174,34 @@ overlap, the contract is canonical — this glossary is orientation.
   datum and its dependencies. Spec'd in
   [`61-mss-and-hyphae-form-spec.md`](61-mss-and-hyphae-form-spec.md); the hyphae
   chain it relies on is `derive_hyphae_chain`
-  (`MyCiteV2/packages/core/mss/datum_identity.py:126`).
+  (`micyte/core/mss/datum_identity.py:126`).
 
 - **SAMRAS** — the pure structural model for breadth-first child-count magnitude
   trees: canonical encode/decode, address derivation, round-trip validation, and
   mutation helpers, with no presentation logic. Owned by
-  `MyCiteV2/packages/core/structures/samras/` (see its
-  [`README.md`](../../MyCiteV2/packages/core/structures/samras/README.md) and
+  `micyte/core/structures/samras/` (see its
+  [`README.md`](../../micyte/core/structures/samras/README.md) and
   `structure.py`). Canonical contracts:
   [`../contracts/samras_structural_model.md`](../contracts/samras_structural_model.md).
 
 - **HOPS** — bounded mixed-radix coordinate decoding promoted for the read-only
   CTS-GIS slice; it deliberately does not revive the broader legacy HOPS stack.
-  Owned by `MyCiteV2/packages/core/structures/hops/` (see its
-  [`README.md`](../../MyCiteV2/packages/core/structures/hops/README.md),
+  Owned by `micyte/core/structures/hops/` (see its
+  [`README.md`](../../micyte/core/structures/hops/README.md),
   `time_address.py`, `chronology.py`).
 
 - **sandbox** — a named workspace grouping a set of datum documents. The sandbox
   segment is part of a `lv.` document ID and is required for `lv.` docs and
   forbidden for `stl.`/`cptr.` docs —
-  `MyCiteV2/packages/core/document_naming/__init__.py:95`. The tool palette also
+  `micyte/core/document_naming/__init__.py:95`. The tool palette also
   exposes per-sandbox tool discovery (`fetchForSandbox` in
-  `MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js:79`).
+  `fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js:79`).
 
 - **datum document** — a persisted collection of datum rows in MSS form, one
   document per logical doc, modeled by `AuthoritativeDatumDocument` in
-  `MyCiteV2/packages/ports/datum_store/`. Canonical document IDs follow
+  `micyte/ports/datum_store/`. Canonical document IDs follow
   `<prefix>.<msn_id>[.<sandbox>].<name>.<hash>` —
-  `MyCiteV2/packages/core/document_naming/__init__.py:65`
+  `micyte/core/document_naming/__init__.py:65`
   (`format_canonical_document_id`). The MOS database is the canonical store;
   on-disk YAML is transport only. Taxonomy:
   [`../contracts/datum_document_naming_taxonomy.md`](../contracts/datum_document_naming_taxonomy.md).
@@ -210,25 +210,25 @@ overlap, the contract is canonical — this glossary is orientation.
   a sandbox's datum documents that L3 tools, lenses, and the UI consume at
   runtime. It is explicitly a TRANSPORT format only — never a persistence store —
   per the module docstrings at
-  `MyCiteV2/packages/core/datum_io/codec.py:1` and
-  `MyCiteV2/packages/core/datum_ops/workbook.py:5`. The write path compiles an
+  `micyte/core/datum_io/codec.py:1` and
+  `micyte/core/datum_ops/workbook.py:5`. The write path compiles an
   edited workbook back into a MOS migration
-  (`MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py:488`).
+  (`fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py:488`).
   See [`70-yaml-materialization-pipeline.md`](70-yaml-materialization-pipeline.md).
 
 - **lens** — a bounded presentation transform that changes how a recognized datum
   value is displayed (e.g. nominal ASCII text instead of raw binary magnitude),
   without changing stored data. Lenses resolve by family / value_kind / overlay in
-  `MyCiteV2/packages/state_machine/lens/registry.py:25` (`DatumLensRegistry`).
+  `micyte/state_machine/lens/registry.py:25` (`DatumLensRegistry`).
   See [`81-lens-authoring-guide.md`](81-lens-authoring-guide.md).
 
 - **tool** — a modular function bound to a datum's archetype / source_kind, surfaced
   from the menu-bar search and added to the interface panel. Eligibility is
   computed by `recognize_applicable_tools`
-  (`MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:64`), with the
+  (`micyte/state_machine/portal_shell/tool_eligibility.py:64`), with the
   archetype set widened via the hyphae chain. The palette UI calls
   `GET /portal/api/tools/eligible`
-  (`MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js:40`).
+  (`fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js:40`).
   Canonical contract:
   [`../contracts/tool_operating_contract.md`](../contracts/tool_operating_contract.md).
   See [`80-tool-authoring-guide.md`](80-tool-authoring-guide.md).
@@ -236,19 +236,19 @@ overlap, the contract is canonical — this glossary is orientation.
 - **archetype** — a token classifying a datum document or row, used as the binding
   surface for tools. Derived from `document_metadata.archetype` and from per-row
   `archetype` tokens reached through the hyphae chain —
-  `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:36`
+  `micyte/state_machine/portal_shell/tool_eligibility.py:36`
   (`_row_archetype`) and `:44` (`_document_archetype_set`).
 
 - **msn_id** — the MOS sequence-name identifier embedded in a canonical document
   ID. It must be non-empty and contain no `.` —
-  `MyCiteV2/packages/core/document_naming/__init__.py:82`. It is the stable handle
+  `micyte/core/document_naming/__init__.py:82`. It is the stable handle
   in the `<prefix>.<msn_id>.…` naming scheme.
 
 - **contact card** — (future) the public card a portal advertises, declaring what
   is requestable plus the portal's public key. The supporting network read-model
   query normalizer exists at
-  `MyCiteV2/packages/core/network_root_surface_query.py`; the contract surface is
-  the stubbed `MyCiteV2/packages/modules/domains/contracts/` package
+  `micyte/core/network_root_surface_query.py`; the contract surface is
+  the stubbed `micyte/domains/contracts/` package
   (currently a 1-LOC inert scaffold). See
   [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
 
@@ -257,9 +257,9 @@ overlap, the contract is canonical — this glossary is orientation.
   the base MSS document; the **Subordinate** fills the empty datum fields and
   recompiles the MSS. Contracts enable resource sharing, and every portal defaults
   to a Subordinate contract with the FND portal. Scaffolded at
-  `MyCiteV2/packages/modules/domains/contracts/`,
-  `MyCiteV2/packages/modules/domains/reference_exchange/`, and
-  `MyCiteV2/packages/core/crypto/` (all inert today). See
+  `micyte/domains/contracts/`,
+  `micyte/domains/reference_exchange/`, and
+  `micyte/core/crypto/` (all inert today). See
   [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
 
 - **msn_registry** — (future) the DNS-like MSS file the FND portal publishes so
@@ -269,9 +269,9 @@ overlap, the contract is canonical — this glossary is orientation.
 - **flag** — the mechanism by which a compiled-hyphae match against a registered
   value "raises a flag" that binds a lens or tool. Today binding is approximated by
   archetype/source_kind widening in
-  `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py` and by
+  `micyte/state_machine/portal_shell/tool_eligibility.py` and by
   family/value_kind matching in
-  `MyCiteV2/packages/state_machine/lens/registry.py`; there is no first-class
+  `micyte/state_machine/lens/registry.py`; there is no first-class
   hyphae-flag primitive yet. The target design is specified in
   [`60-canonical-datum-and-hyphae-flags.md`](60-canonical-datum-and-hyphae-flags.md).
 

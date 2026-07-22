@@ -9,12 +9,15 @@ the plaintext echoed in the row tail.
 
 from __future__ import annotations
 
+from . import field_registry as _fr
+
 TITLE_BITS = 512  # niu-baciloid-256-64: 64 chars x 8-bit ASCII
 
-# The reference-design markers used by agro_erp definition rows.
-RF_NODE_ID = "rf.3-1-1"   # SAMRAS-babelette-txa_id (types a node address)
-RF_LCL_ID = "rf.3-1-5"    # SAMRAS-babelette-lcl_id (types an lcl node address)
-RF_TITLE = "rf.3-1-2"     # title-babelette (512-bit ASCII)
+# The reference-design markers used by agro_erp definition rows. Single-sourced from the
+# field registry (the FARM/agro namespace) so the numbering lives in exactly one place.
+RF_NODE_ID = _fr.marker(_fr.FARM, "txa_id")  # rf.3-1-1 — SAMRAS-babelette-txa_id
+RF_LCL_ID = _fr.marker(_fr.FARM, "lcl_id")   # rf.3-1-5 — SAMRAS-babelette-lcl_id
+RF_TITLE = _fr.marker(_fr.FARM, "title")     # rf.3-1-2 — title-babelette (512-bit ASCII)
 
 
 def encode_label_bits(label: str, *, bits: int = TITLE_BITS) -> str:

@@ -68,22 +68,22 @@ import the datum engine from `core/` without reaching through an adapter.
 The datum-operation layer lives in `core/`, but its core algebra **imports the
 SQL adapter**, inverting the intended dependency direction:
 
-- [`MyCiteV2/packages/core/datum_ops/ops.py:24`](../../MyCiteV2/packages/core/datum_ops/ops.py) —
-  `from MyCiteV2.packages.adapters.sql.datum_semantics import (...)`.
-- [`MyCiteV2/packages/core/datum_ops/node_ops.py:17`](../../MyCiteV2/packages/core/datum_ops/node_ops.py) —
-  `from MyCiteV2.packages.adapters.sql.datum_semantics import parse_datum_address`.
+- [`micyte/core/datum_ops/ops.py:24`](../../micyte/core/datum_ops/ops.py) —
+  `from micyte.adapters.sql.datum_semantics import (...)`.
+- [`micyte/core/datum_ops/node_ops.py:17`](../../micyte/core/datum_ops/node_ops.py) —
+  `from micyte.adapters.sql.datum_semantics import parse_datum_address`.
 
 The recognition/identity logic is **duplicated**: the MSS-hash and
 address-recognition routines live both in
-[`MyCiteV2/packages/core/mss/datum_identity.py`](../../MyCiteV2/packages/core/mss/datum_identity.py)
+[`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
 and in the adapter
-[`MyCiteV2/packages/adapters/sql/datum_semantics.py`](../../MyCiteV2/packages/adapters/sql/datum_semantics.py),
+[`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py),
 so the canonical engine is ambiguous.
 
 There is **no boundary test** asserting that `core/datum_ops` may not import
 `adapters/*`. The architecture suite already has analogous guards
 (`test_core_datum_refs_boundaries.py`, `test_core_datum_rules_boundaries.py` in
-[`MyCiteV2/tests/architecture/`](../../MyCiteV2/tests/architecture)) — but
+[`fnd_app/tests/architecture/`](../../fnd_app/tests/architecture)) — but
 **not** `test_core_datum_ops_boundaries.py`, so the inversion is uncaught.
 
 ### What to do
@@ -97,17 +97,17 @@ There is **no boundary test** asserting that `core/datum_ops` may not import
     engine; the SQL adapter keeps only SQL-shaped concerns.
 
 0c. **Add `test_core_datum_ops_boundaries.py`** to
-    [`MyCiteV2/tests/architecture/`](../../MyCiteV2/tests/architecture) so the
+    [`fnd_app/tests/architecture/`](../../fnd_app/tests/architecture) so the
     inversion can never silently return.
 
 0d. **Document the future stubs** (Track 3 dirs) as deliberately empty so they
     are not mistaken for dead code: see
-    [`MyCiteV2/packages/core/crypto`](../../MyCiteV2/packages/core/crypto),
-    [`MyCiteV2/packages/modules/domains/contracts`](../../MyCiteV2/packages/modules/domains/contracts),
-    [`MyCiteV2/packages/modules/domains/reference_exchange`](../../MyCiteV2/packages/modules/domains/reference_exchange),
-    [`MyCiteV2/packages/state_machine/mediation_surface`](../../MyCiteV2/packages/state_machine/mediation_surface),
-    [`MyCiteV2/packages/sandboxes`](../../MyCiteV2/packages/sandboxes), and
-    [`MyCiteV2/packages/tools/_shared`](../../MyCiteV2/packages/tools/_shared)
+    [`micyte/core/crypto`](../../micyte/core/crypto),
+    [`micyte/domains/contracts`](../../micyte/domains/contracts),
+    [`micyte/domains/reference_exchange`](../../micyte/domains/reference_exchange),
+    [`micyte/state_machine/mediation_surface`](../../micyte/state_machine/mediation_surface),
+    [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes), and
+    [`micyte/tools/_shared`](../../micyte/tools/_shared)
     (each is a `README.md` + `__init__.py` placeholder today).
 
 > **Landing in THIS batch:** 0a + 0b + 0c. A sibling unit relocates the engine
@@ -134,26 +134,26 @@ D4 (the lens-management UX it depends on).
 1. **A hyphae-flag mechanism** (D3). Tools bind to *flags* on recognized hyphae
    values, but there is no first-class flag-declaration path yet — recognition
    and identity live in
-   [`MyCiteV2/packages/core/mss/datum_identity.py`](../../MyCiteV2/packages/core/mss/datum_identity.py)
+   [`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
    and the adapter
-   [`MyCiteV2/packages/adapters/sql/datum_semantics.py`](../../MyCiteV2/packages/adapters/sql/datum_semantics.py).
+   [`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py).
    The "minimum-but-complete" path (smallest set of flags that still round-trips
    a document) is specified in
    [`60-canonical-datum-and-hyphae-flags.md`](60-canonical-datum-and-hyphae-flags.md).
 
 2. **Read-path YAML unification** (D2, partial). The lens/read path currently
    projects SQL → display JSON in
-   [`MyCiteV2/packages/tools/workbench_ui/service.py`](../../MyCiteV2/packages/tools/workbench_ui/service.py)
+   [`micyte/tools/workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py)
    (imports `datum_semantics`, builds JSON rows for the grid), while the write
    path round-trips through the WORKBOOK-YAML codec
-   [`MyCiteV2/packages/core/datum_io/codec.py`](../../MyCiteV2/packages/core/datum_io/codec.py).
+   [`micyte/core/datum_io/codec.py`](../../micyte/core/datum_io/codec.py).
    Tools become easier to author when they read and write the *same* YAML
    shape. (Full reconciliation is Track 2; Track 1 needs only the read path to
    speak the codec's vocabulary.)
 
 3. **Utilities-manage / Control-Panel-toggle lens UX** (D4). The lens registry
    resolves presentation lenses
-   ([`MyCiteV2/packages/state_machine/lens/registry.py`](../../MyCiteV2/packages/state_machine/lens/registry.py)
+   ([`micyte/state_machine/lens/registry.py`](../../micyte/state_machine/lens/registry.py)
    — `DatumLensRegistry` maps families/value-kinds to lenses) but there is **no
    user surface** to manage or toggle lenses; the file contains no
    "Utilities" / "Control Panel" affordance. Authors and operators need a way to
@@ -162,7 +162,7 @@ D4 (the lens-management UX it depends on).
 ### What to do
 
 - Build one or two **demo sandboxes** under
-  [`MyCiteV2/packages/sandboxes`](../../MyCiteV2/packages/sandboxes) following
+  [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes) following
   the cookbook, each exercising a real recognized family.
 - Author **tools** bound to hyphae flags per the tool guide.
 - Author **lenses** and register them, then expose the Utilities/Control-Panel
@@ -187,23 +187,23 @@ on WORKBOOK-YAML.
 ### What is incoherent today
 
 - **MSS vs SAMRAS terminology drift** (D3). MSS identity lives in
-  [`MyCiteV2/packages/core/mss/datum_identity.py`](../../MyCiteV2/packages/core/mss/datum_identity.py)
+  [`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
   (`MSS_VERSION_HASH_POLICY = "mos.mss_sha256_v1"`), recognition/parsing lives in
-  [`MyCiteV2/packages/adapters/sql/datum_semantics.py`](../../MyCiteV2/packages/adapters/sql/datum_semantics.py),
+  [`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py),
   and the SAMRAS structures live under
-  [`MyCiteV2/packages/core/structures/samras`](../../MyCiteV2/packages/core/structures/samras).
+  [`micyte/core/structures/samras`](../../micyte/core/structures/samras).
   The same concepts wear different names across these three homes. The spec
   reconciles the vocabulary and defines how hyphae-focus preprocessing relates
   to the MSS form.
 
 - **Two codecs, two shapes** (D2). The write path serializes through
-  [`MyCiteV2/packages/core/datum_io/codec.py`](../../MyCiteV2/packages/core/datum_io/codec.py)
+  [`micyte/core/datum_io/codec.py`](../../micyte/core/datum_io/codec.py)
   (consumed by
-  [`MyCiteV2/packages/core/datum_ops/workbook.py`](../../MyCiteV2/packages/core/datum_ops/workbook.py)
+  [`micyte/core/datum_ops/workbook.py`](../../micyte/core/datum_ops/workbook.py)
   and the mutation runtime
-  [`MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`](../../MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py)),
+  [`fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`](../../fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py)),
   while the read path hand-projects SQL → JSON in
-  [`MyCiteV2/packages/tools/workbench_ui/service.py`](../../MyCiteV2/packages/tools/workbench_ui/service.py).
+  [`micyte/tools/workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py).
   Two representations means two places to keep correct.
 
 ### What to do
@@ -230,25 +230,44 @@ has stabilized the model.
 
 ### Stubbed today (README + `__init__.py` only)
 
-- [`MyCiteV2/packages/core/crypto`](../../MyCiteV2/packages/core/crypto)
-- [`MyCiteV2/packages/modules/domains/contracts`](../../MyCiteV2/packages/modules/domains/contracts)
-- [`MyCiteV2/packages/modules/domains/reference_exchange`](../../MyCiteV2/packages/modules/domains/reference_exchange)
-- [`MyCiteV2/packages/state_machine/mediation_surface`](../../MyCiteV2/packages/state_machine/mediation_surface)
-- [`MyCiteV2/packages/sandboxes`](../../MyCiteV2/packages/sandboxes) (also used by Track 1)
+- [`micyte/core/crypto`](../../micyte/core/crypto)
+- [`micyte/domains/contracts`](../../micyte/domains/contracts)
+- [`micyte/domains/reference_exchange`](../../micyte/domains/reference_exchange)
+- [`micyte/state_machine/mediation_surface`](../../micyte/state_machine/mediation_surface)
+- [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes) (also used by Track 1)
+
+> **Cleanup audit (2026-07-21).** The directories above are **intentional
+> deferred scaffolds (empty; the deferred network/crypto/handshake layer)** —
+> each is a 1-LOC `__init__.py` (`"""Inert package scaffold."""`) plus a short
+> README stub, carrying **zero functional references** (nothing `import`s them,
+> and no config or test depends on them — only the descriptive citations in this
+> wiki). They are safe to carry as-is or remove later. Audited scaffolds, at
+> their **actual on-disk paths**: `micyte/core/crypto`,
+> `micyte/domains/contracts`, `micyte/domains/reference_exchange`,
+> `micyte/state_machine/mediation_surface`,
+> `fnd_app/packages/sandboxes/orchestration`,
+> `fnd_app/packages/sandboxes/system` (plus the similar `micyte/tools/_shared`).
+> Note the two `domains` scaffolds now live under `micyte/domains/`, **not**
+> `fnd_app/packages/modules/domains/` as the links above still read.
+>
+> **Vestigial artifact.** The in-repo `agentic/evidence/reports/*.md` (4 files,
+> dated 2026-05-10) is **vestigial** — superseded records with zero code/config
+> references; it is prunable. No live code or config reference points at the
+> in-repo copy.
 
 ### Intended build order (within this track)
 
-1. **crypto** — signing/identity primitives ([`core/crypto`](../../MyCiteV2/packages/core/crypto)).
-2. **contracts** — the agreement model ([`modules/domains/contracts`](../../MyCiteV2/packages/modules/domains/contracts)).
+1. **crypto** — signing/identity primitives ([`core/crypto`](../../micyte/core/crypto)).
+2. **contracts** — the agreement model ([`modules/domains/contracts`](../../micyte/domains/contracts)).
 3. **contact card + default FND subordinate** — a node's published identity,
    defaulting to an FND-subordinate relationship.
 4. **msn_registry** — the network's name/address registry.
 5. **template-driven fill** — contact cards and contracts populated from
    templates.
 6. **reference exchange** — cross-node reference sharing
-   ([`modules/domains/reference_exchange`](../../MyCiteV2/packages/modules/domains/reference_exchange)),
+   ([`modules/domains/reference_exchange`](../../micyte/domains/reference_exchange)),
    brokered through the
-   [`mediation_surface`](../../MyCiteV2/packages/state_machine/mediation_surface).
+   [`mediation_surface`](../../micyte/state_machine/mediation_surface).
 
 **Spec page:** [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
 
@@ -361,15 +380,15 @@ and **three code fixes** that close Track 0's D1:
 
 1. Relocated the datum engine into `core/datum_semantics/` (removing the
    duplication between
-   [`core/mss/datum_identity.py`](../../MyCiteV2/packages/core/mss/datum_identity.py)
+   [`core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
    and
-   [`adapters/sql/datum_semantics.py`](../../MyCiteV2/packages/adapters/sql/datum_semantics.py)).
+   [`adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py)).
 2. Flipped the inverted imports in
-   [`core/datum_ops/ops.py`](../../MyCiteV2/packages/core/datum_ops/ops.py) and
-   [`core/datum_ops/node_ops.py`](../../MyCiteV2/packages/core/datum_ops/node_ops.py)
+   [`core/datum_ops/ops.py`](../../micyte/core/datum_ops/ops.py) and
+   [`core/datum_ops/node_ops.py`](../../micyte/core/datum_ops/node_ops.py)
    to depend inward on `core/`.
 3. Added `test_core_datum_ops_boundaries.py` to
-   [`MyCiteV2/tests/architecture/`](../../MyCiteV2/tests/architecture).
+   [`fnd_app/tests/architecture/`](../../fnd_app/tests/architecture).
 
 **Everything else on this roadmap is design-spec → future work.** Tracks 1–4
 are sequenced and specified here and in the linked pages, but were not

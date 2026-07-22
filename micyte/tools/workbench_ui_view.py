@@ -7,7 +7,7 @@ datum context selects a sandbox-source or system-anthology document — the
 sibling of every dedicated viz tool (cts_gis, agro_erp, …).
 
 The actual document_table / datum_grid / overlay rendering lives in
-``MyCiteV2/instances/_shared/runtime/portal_workbench_ui_runtime.py`` and is
+``fnd_app/instances/_shared/runtime/portal_workbench_ui_runtime.py`` and is
 reached by navigating to ``WORKBENCH_UI_TOOL_ROUTE`` (carried on the palette
 entry's ``route`` field by the shell, not by the build-payload contract).
 This module exists solely so the viz registry — the one

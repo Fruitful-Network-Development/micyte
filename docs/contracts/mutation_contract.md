@@ -16,7 +16,7 @@ Define the shared mutation lifecycle contract so editable tool surfaces can stag
 - `apply`
 - `discard`
 
-These actions are defined in `MyCiteV2/packages/state_machine/nimm/mutation_contract.py` and mapped to canonical endpoint shapes.
+These actions are defined in `micyte/state_machine/nimm/mutation_contract.py` and mapped to canonical endpoint shapes.
 
 ## Canonical Endpoint Shapes
 

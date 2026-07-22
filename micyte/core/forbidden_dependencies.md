@@ -1,9 +1,9 @@
 # Forbidden Dependencies
 
-- `packages/state_machine/`
+- `micyte/state_machine/`
 - `packages/modules/`
-- `packages/ports/`
+- `micyte/ports/`
 - `packages/adapters/`
-- `packages/tools/`
+- `micyte/tools/`
 - `packages/sandboxes/`
 - `instances/`

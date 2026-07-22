@@ -2,7 +2,7 @@
 
 Authority: [../../../../docs/plans/v2-authority_stack.md](../../../../docs/plans/v2-authority_stack.md)
 
-`packages/ports/aws_read_only_status/` defines the narrow read-only seam for the first AWS operational visibility slice.
+`micyte/ports/aws_read_only_status/` defines the narrow read-only seam for the first AWS operational visibility slice.
 
 Implemented in this slice:
 
