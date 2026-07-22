@@ -6,7 +6,7 @@
 
 ## Purpose
 
-`MyCiteV2/packages/core/` is the **L1 CORE** layer: a lean, store-agnostic
+`micyte/core/` is the **L1 CORE** layer: a lean, store-agnostic
 library that defines what a *datum* is, how datum addresses compose into SAMRAS
 trees, how a document's content reduces to a single canonical MSS version hash,
 how a sandbox is loaded as a `Workbook` and edited by pure composable
@@ -25,75 +25,75 @@ load → edit → compile → plan → apply round-trip.
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/datum_io/codec.py:55` | `to_yaml` / `from_yaml` — one datum document ⇄ conventionalized YAML | 121 |
-| `MyCiteV2/packages/core/datum_io/codec.py:97` | `workbook_to_yaml` / `workbook_from_yaml` — a whole sandbox as a multi-sheet WORKBOOK envelope | — |
-| `MyCiteV2/packages/core/datum_io/__init__.py:3` | re-exports the codec surface + the two schema constants | 19 |
+| `micyte/core/datum_io/codec.py:55` | `to_yaml` / `from_yaml` — one datum document ⇄ conventionalized YAML | 121 |
+| `micyte/core/datum_io/codec.py:97` | `workbook_to_yaml` / `workbook_from_yaml` — a whole sandbox as a multi-sheet WORKBOOK envelope | — |
+| `micyte/core/datum_io/__init__.py:3` | re-exports the codec surface + the two schema constants | 19 |
 
 ### Datum-ops manipulation library (`core/datum_ops/`)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/datum_ops/ops.py:43` | `Workbook` (sandbox = named sheets) + `WorkbookDelta` + `apply_sequence` | 172 |
-| `MyCiteV2/packages/core/datum_ops/ops.py:105` | row-level ops `InsertRow` / `DeleteRow` / `MoveRow` / `ReorderRow` (delegate to the SQL reorder engine) | — |
-| `MyCiteV2/packages/core/datum_ops/node_ops.py:128` | node-address ops `MintNode` / `RelocateNode` / `RepointNode` / `RenameNode` / `DropNode` | 331 |
-| `MyCiteV2/packages/core/datum_ops/node_ops.py:262` | cross-sheet primitives `RewriteRefs` / `RecompileMagnitude` / `RebuildCollection` | — |
-| `MyCiteV2/packages/core/datum_ops/node_addrs.py:37` | variable-depth SAMRAS node-address algebra (parent/child, contiguous alloc, subtree remap) | 149 |
-| `MyCiteV2/packages/core/datum_ops/refs.py:152` | `build_reference_index` — sandbox-wide cross-document node-reference edges + definitions | 176 |
-| `MyCiteV2/packages/core/datum_ops/compiler.py:50` | `compile_workbook` — diff baseline vs edited workbook → infer the op sequence | 112 |
-| `MyCiteV2/packages/core/datum_ops/migrate.py:82` | `plan_migration` — apply ops, rule-check, re-mint canonical ids, SAMRAS consistency | 148 |
-| `MyCiteV2/packages/core/datum_ops/migrate.py:39` | `mint_canonical_id` — re-mint a document id from its fresh MSS hash (idempotent) | — |
-| `MyCiteV2/packages/core/datum_ops/rules_loop.py:51` | `check_step` — row-shape + SAMRAS-decode + reference-existence checks (HARD vs advisory) | 84 |
-| `MyCiteV2/packages/core/datum_ops/samras_deps.py:43` | `build_magnitude_bitstream` + anchor→source map; SAMRAS-magnitude recompile helpers | 75 |
-| `MyCiteV2/packages/core/datum_ops/labels.py:20` | 512-bit ASCII title-label codec (`rf.3-1-2` babelette) | 33 |
-| `MyCiteV2/packages/core/datum_ops/workbook.py:16` | `Workbook` ⇄ WORKBOOK-YAML bridge (sheets keyed by canonical name) | 31 |
-| `MyCiteV2/packages/core/datum_ops/__init__.py:1` | public API surface for the manipulation library | 85 |
+| `micyte/core/datum_ops/ops.py:43` | `Workbook` (sandbox = named sheets) + `WorkbookDelta` + `apply_sequence` | 172 |
+| `micyte/core/datum_ops/ops.py:105` | row-level ops `InsertRow` / `DeleteRow` / `MoveRow` / `ReorderRow` (delegate to the SQL reorder engine) | — |
+| `micyte/core/datum_ops/node_ops.py:128` | node-address ops `MintNode` / `RelocateNode` / `RepointNode` / `RenameNode` / `DropNode` | 331 |
+| `micyte/core/datum_ops/node_ops.py:262` | cross-sheet primitives `RewriteRefs` / `RecompileMagnitude` / `RebuildCollection` | — |
+| `micyte/core/datum_ops/node_addrs.py:37` | variable-depth SAMRAS node-address algebra (parent/child, contiguous alloc, subtree remap) | 149 |
+| `micyte/core/datum_ops/refs.py:152` | `build_reference_index` — sandbox-wide cross-document node-reference edges + definitions | 176 |
+| `micyte/core/datum_ops/compiler.py:50` | `compile_workbook` — diff baseline vs edited workbook → infer the op sequence | 112 |
+| `micyte/core/datum_ops/migrate.py:82` | `plan_migration` — apply ops, rule-check, re-mint canonical ids, SAMRAS consistency | 148 |
+| `micyte/core/datum_ops/migrate.py:39` | `mint_canonical_id` — re-mint a document id from its fresh MSS hash (idempotent) | — |
+| `micyte/core/datum_ops/rules_loop.py:51` | `check_step` — row-shape + SAMRAS-decode + reference-existence checks (HARD vs advisory) | 84 |
+| `micyte/core/datum_ops/samras_deps.py:43` | `build_magnitude_bitstream` + anchor→source map; SAMRAS-magnitude recompile helpers | 75 |
+| `micyte/core/datum_ops/labels.py:20` | 512-bit ASCII title-label codec (`rf.3-1-2` babelette) | 33 |
+| `micyte/core/datum_ops/workbook.py:16` | `Workbook` ⇄ WORKBOOK-YAML bridge (sheets keyed by canonical name) | 31 |
+| `micyte/core/datum_ops/__init__.py:1` | public API surface for the manipulation library | 85 |
 
 ### MSS identity (`core/mss/`)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/mss/datum_identity.py:101` | `compute_mss_hash` — deterministic SHA-256 over sorted rows (the version identity) | 177 |
-| `MyCiteV2/packages/core/mss/datum_identity.py:126` | `derive_hyphae_chain` — the `0-0-*` rudi closure for a datum address | — |
-| `MyCiteV2/packages/core/mss/canonicalization.py:50` | `canonicalize_iteration_addresses` / `canonicalize_value_group_ordering` — pre-hash row-order invariants | 122 |
-| `MyCiteV2/packages/core/mss/__init__.py:1` | re-exports `compute_mss_hash`, `derive_hyphae_chain`, the canonicalizers | 12 |
+| `micyte/core/mss/datum_identity.py:101` | `compute_mss_hash` — deterministic SHA-256 over sorted rows (the version identity) | 177 |
+| `micyte/core/mss/datum_identity.py:126` | `derive_hyphae_chain` — the `0-0-*` rudi closure for a datum address | — |
+| `micyte/core/mss/canonicalization.py:50` | `canonicalize_iteration_addresses` / `canonicalize_value_group_ordering` — pre-hash row-order invariants | 122 |
+| `micyte/core/mss/__init__.py:1` | re-exports `compute_mss_hash`, `derive_hyphae_chain`, the canonicalizers | 12 |
 
 ### Canonical document naming (`core/document_naming/`)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/document_naming/__init__.py:65` | `format_canonical_document_id` — compose `lv.`/`stl.`/`cptr.` ids | 338 |
-| `MyCiteV2/packages/core/document_naming/__init__.py:109` | `parse_canonical_document_id` (+ `is_canonical_document_id`) — single validation point | — |
-| `MyCiteV2/packages/core/document_naming/__init__.py:238` | `derive_canonical_id_from_legacy` — migrate `system:`/`sandbox:`/`payload:`/`cache:` ids | — |
+| `micyte/core/document_naming/__init__.py:65` | `format_canonical_document_id` — compose `lv.`/`stl.`/`cptr.` ids | 338 |
+| `micyte/core/document_naming/__init__.py:109` | `parse_canonical_document_id` (+ `is_canonical_document_id`) — single validation point | — |
+| `micyte/core/document_naming/__init__.py:238` | `derive_canonical_id_from_legacy` — migrate `system:`/`sandbox:`/`payload:`/`cache:` ids | — |
 
 ### SAMRAS structure codec (`core/structures/samras/`)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/structures/samras/structure.py:11` | address-segment algebra (`parse_address_segments`, `parent_address`) + `SamrasStructure` dataclass | 106 |
-| `MyCiteV2/packages/core/structures/samras/codec.py:122` | `encode_canonical_structure_from_addresses` / `decode_canonical_bitstream` (unary-width header, stop slices, value stream) | 262 |
-| `MyCiteV2/packages/core/structures/samras/codec.py:184` | legacy decoders (fixed-header binary, hyphen payload) for migration | — |
-| `MyCiteV2/packages/core/structures/samras/validation.py:33` | `derive_addresses_from_child_counts` / `child_counts_from_addresses` + structure validation | 181 |
-| `MyCiteV2/packages/core/structures/samras/mutation.py:1` | tree mutations (`add_child`/`move_branch`/`remove_branch`/`rebuild_structure_from_addresses`) | 259 |
-| `MyCiteV2/packages/core/structures/samras/workspace_adapter.py:1` | reconstruct a structure from datum rows; pick a preferred authority row | 377 |
+| `micyte/core/structures/samras/structure.py:11` | address-segment algebra (`parse_address_segments`, `parent_address`) + `SamrasStructure` dataclass | 106 |
+| `micyte/core/structures/samras/codec.py:122` | `encode_canonical_structure_from_addresses` / `decode_canonical_bitstream` (unary-width header, stop slices, value stream) | 262 |
+| `micyte/core/structures/samras/codec.py:184` | legacy decoders (fixed-header binary, hyphen payload) for migration | — |
+| `micyte/core/structures/samras/validation.py:33` | `derive_addresses_from_child_counts` / `child_counts_from_addresses` + structure validation | 181 |
+| `micyte/core/structures/samras/mutation.py:1` | tree mutations (`add_child`/`move_branch`/`remove_branch`/`rebuild_structure_from_addresses`) | 259 |
+| `micyte/core/structures/samras/workspace_adapter.py:1` | reconstruct a structure from datum rows; pick a preferred authority row | 377 |
 
 ### HOPS coordinate / chronology codec (`core/hops/`, `core/structures/hops/`)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/structures/hops/__init__.py:74` | `classify_hops_coordinate_token` / `decode_hops_coordinate_token` (mixed-radix lon/lat) | 170 |
-| `MyCiteV2/packages/core/hops/__init__.py:14` | canonical public HOPS API — re-exports the structures/hops decoders + `assemble_polygon_groups` | 63 |
-| `MyCiteV2/packages/core/hops/polygon_groups.py:1` | `assemble_polygon_groups` — spatial chain `4 → 5 → 6 → 7` row-group assembly | 105 |
-| `MyCiteV2/packages/core/structures/hops/time_address.py:1` | time-address parse/compare/normalize + projection helpers | 231 |
-| `MyCiteV2/packages/core/structures/hops/time_address_schema.py:1` | `decode_mixed_radix_magnitude`, anchor-payload-driven schema | 173 |
-| `MyCiteV2/packages/core/structures/hops/chronology.py:1` | `ChronologyAuthority`, `encode_unix_ms_as_hops` / `encode_utc_datetime_as_hops` | 102 |
+| `micyte/core/structures/hops/__init__.py:74` | `classify_hops_coordinate_token` / `decode_hops_coordinate_token` (mixed-radix lon/lat) | 170 |
+| `micyte/core/hops/__init__.py:14` | canonical public HOPS API — re-exports the structures/hops decoders + `assemble_polygon_groups` | 63 |
+| `micyte/core/hops/polygon_groups.py:1` | `assemble_polygon_groups` — spatial chain `4 → 5 → 6 → 7` row-group assembly | 105 |
+| `micyte/core/structures/hops/time_address.py:1` | time-address parse/compare/normalize + projection helpers | 231 |
+| `micyte/core/structures/hops/time_address_schema.py:1` | `decode_mixed_radix_magnitude`, anchor-payload-driven schema | 173 |
+| `micyte/core/structures/hops/chronology.py:1` | `ChronologyAuthority`, `encode_unix_ms_as_hops` / `encode_utc_datetime_as_hops` | 102 |
 
 ### Supporting authorities (skim)
 
 | path:line | role | approx LOC |
 |---|---|---|
-| `MyCiteV2/packages/core/datum_rules/rules.py:92` | `classify_row` / `validate_row` — MOS shape/arity authority (rudi/scalar/pairs/record) | 239 |
-| `MyCiteV2/packages/core/datum_refs/refs.py:45` | `parse_datum_ref` / `normalize_datum_ref` — `<msn_id>.<datum_address>` ref grammar | 96 |
-| `MyCiteV2/packages/core/datum_templates/__init__.py:1` | archetype templates: scaffold / recognize / column-map for CSV intake | 417 |
+| `micyte/core/datum_rules/rules.py:92` | `classify_row` / `validate_row` — MOS shape/arity authority (rudi/scalar/pairs/record) | 239 |
+| `micyte/core/datum_refs/refs.py:45` | `parse_datum_ref` / `normalize_datum_ref` — `<msn_id>.<datum_address>` ref grammar | 96 |
+| `micyte/core/datum_templates/__init__.py:1` | archetype templates: scaffold / recognize / column-map for CSV intake | 417 |
 
 ## How it works
 
@@ -219,7 +219,7 @@ canonical (the MOS-only datum storage rule).
 ## Open questions
 
 * **Core → adapter inversion.** The supposed L1 address/hyphae/MSS engine is
-  actually `MyCiteV2/packages/adapters/sql/datum_semantics.py` (663 LOC). Core
+  actually `micyte/adapters/sql/datum_semantics.py` (663 LOC). Core
   modules import the primitive parsers *from the adapter*:
   `core/datum_ops/ops.py:24` and `core/datum_ops/node_ops.py:17` both import
   `parse_datum_address` (and `ops.py` also imports `preview_document_insert` /

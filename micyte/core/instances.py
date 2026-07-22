@@ -11,7 +11,7 @@ position is geography. Reading a segment in isolation tells you nothing. The
 authority for "which entity owns this sandbox" is ``registrar.legal_entity``;
 the authority for "which msn is this sandbox keyed on today" is the sandbox's
 own documents. This module answers the second question. The two agreeing is an
-invariant worth checking (see ``MyCiteV2/scripts/rekey_sandbox_msn.py``), not an
+invariant worth checking (see ``fnd_app/scripts/rekey_sandbox_msn.py``), not an
 assumption to build on.
 
 Pure functions over a document list — every input is already-read data, so this

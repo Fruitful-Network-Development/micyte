@@ -21,14 +21,14 @@ applies it to MOS; the **read/render** path projects SQL straight to JSON and
 never materializes YAML. The two halves are not yet unified.
 
 The shell package itself is a **pure state machine** — no I/O, no Flask, no
-adapters (see `MyCiteV2/packages/state_machine/portal_shell/README.md:16`). The
+adapters (see `micyte/state_machine/portal_shell/README.md:16`). The
 runtime and host wrap it with side effects.
 
 ---
 
 ## File map
 
-### Back-end — shell state machine (`MyCiteV2/packages/state_machine/`)
+### Back-end — shell state machine (`micyte/state_machine/`)
 
 | Path | Role | LOC |
 |---|---|---|
@@ -43,22 +43,22 @@ runtime and host wrap it with side effects.
 | `aitas/` | AITAS context model (`attention`/`intention`/`time`/`archetype`/`scope`) + `merge_aitas_context`, carried inside NIMM envelopes. | — |
 | `mediation_surface/` | **Empty stub** — `__init__.py:1` says "Inert package scaffold"; `README.md:3` is a placeholder. No behavior. | — |
 
-### Back-end — runtime (`MyCiteV2/instances/_shared/runtime/`)
+### Back-end — runtime (`fnd_app/instances/_shared/runtime/`)
 
 | Path | Role | LOC |
 |---|---|---|
 | `portal_shell_runtime.py` | The composition engine. `run_portal_shell_entry()` normalizes the request → resolves the surface → builds a per-surface bundle (`_bundle_for_surface`) → wraps it in `build_shell_composition_payload` → returns a runtime envelope. Also `run_system_profile_basics_action()`. | 1735 |
-| `portal_palette_runtime.py` | Backs `GET /portal/api/tools/eligible` (`build_eligible_tools_response`) and `GET /portal/api/visualizers/for-sandbox` (`build_sandbox_visualizers_response`). Reads from the viz-tool registry `MyCiteV2.packages.tools`. | 243 |
+| `portal_palette_runtime.py` | Backs `GET /portal/api/tools/eligible` (`build_eligible_tools_response`) and `GET /portal/api/visualizers/for-sandbox` (`build_sandbox_visualizers_response`). Reads from the viz-tool registry `micyte.tools`. | 243 |
 | `runtime_platform.py` | Envelope/region-family contracts, surface schemas, request schemas, `build_portal_runtime_envelope` / `build_portal_runtime_error` / `attach_region_family_contract` / `surface_schema_for_surface`. | 462 |
 | `portal_datum_workbench_mutation_runtime.py` | **The WRITE path.** `run_datum_workbench_mutation_action()` dispatches stage/validate/preview/apply over datum operations; `_run_workbook_mutation_action()` (line 480) compiles edited WORKBOOK-YAML → ops → migration plan → atomic MOS apply. | 1189 |
 | `utilities_extensions/` | The 6 Utilities extension renderers (Email, Analytics, Newsletter, PayPal, Connect, Grantee Profile) invoked by `_build_utilities_extensions`. | — |
-| `portal_workbench_ui_runtime.py` (referenced) | Builds the workbench-UI tool bundle; delegate for `system.root`. Calls into `packages/tools/workbench_ui/service.py` (the READ path). | — |
+| `portal_workbench_ui_runtime.py` (referenced) | Builds the workbench-UI tool bundle; delegate for `system.root`. Calls into `micyte/tools/workbench_ui/service.py` (the READ path). | — |
 
 The actual SQL→JSON projection lives one layer down in the workbench-UI tool:
-`MyCiteV2/packages/tools/workbench_ui/service.py` — `read_surface()` (line 586)
+`micyte/tools/workbench_ui/service.py` — `read_surface()` (line 586)
 and `_compute_surface()` (line 630). **This is the READ path.**
 
-### Back-end — Flask host (`MyCiteV2/instances/_shared/portal_host/`)
+### Back-end — Flask host (`fnd_app/instances/_shared/portal_host/`)
 
 | Path | Role | LOC |
 |---|---|---|
@@ -66,7 +66,7 @@ and `_compute_surface()` (line 630). **This is the READ path.**
 | `wsgi.py` | WSGI entrypoint. | — |
 | `templates/portal.html` | The shell HTML shell — embeds the bootstrap request + asset manifest, loaded by `_render_surface`. | — |
 
-### Front-end JS (`MyCiteV2/instances/_shared/portal_host/static/`)
+### Front-end JS (`fnd_app/instances/_shared/portal_host/static/`)
 
 | Path | Role | LOC |
 |---|---|---|
@@ -224,7 +224,7 @@ result   = execute_migration(authority_db_file, plan, ...)   # backup→write→
 ```
 
 The WORKBOOK-YAML codec is transport-only and explicitly non-persisted
-(`packages/core/datum_io/codec.py:1`, `packages/core/datum_ops/workbook.py:1`);
+(`micyte/core/datum_io/codec.py:1`, `micyte/core/datum_ops/workbook.py:1`);
 MOS SQL remains canonical.
 
 **READ/render path — bypasses YAML entirely.** The workbench surface is built by
@@ -243,7 +243,7 @@ specced in `70-yaml-materialization-pipeline.md` *(forward reference)*.
 
 ### NIMM mutation lifecycle (the contract layer)
 
-`packages/state_machine/nimm/` defines the *contract* for staged mutations
+`micyte/state_machine/nimm/` defines the *contract* for staged mutations
 without performing them. `StagingArea.stage_with_lens` (`staging.py:60`) encodes
 + validates a display value through a `Lens`; `compile_manipulation_envelope`
 (`staging.py:90`) emits a `manipulate` `NimmDirectiveEnvelope` carrying the

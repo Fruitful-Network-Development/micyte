@@ -62,17 +62,17 @@ package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
 
 | Vision element | Stub package | Evidence |
 |---|---|---|
-| Asymmetric + symmetric key primitives | `core/crypto` | `MyCiteV2/packages/core/crypto/README.md:3` — "Placeholder for pure cryptographic primitives split out from v1 `vault_session`." `MyCiteV2/packages/core/crypto/__init__.py:1` — `"""Inert package scaffold."""` |
-| Contract model + Manager/Subordinate roles | `modules/domains/contracts` | `MyCiteV2/packages/modules/domains/contracts/README.md:3` — "Placeholder for contract domain semantics only." `__init__.py:1` inert. |
-| Cross-portal datum lookup / fill | `modules/domains/reference_exchange` | `MyCiteV2/packages/modules/domains/reference_exchange/README.md:3` — "Placeholder for reference-exchange domain semantics only." `__init__.py:1` inert. |
-| Sandbox orchestration (template publish/fill runtime) | `sandboxes/orchestration` | `MyCiteV2/packages/sandboxes/orchestration/README.md:3` — "shared sandbox orchestration helpers that do not own domain semantics." |
-| System-scoped orchestration boundary | `sandboxes/system` | `MyCiteV2/packages/sandboxes/system/README.md:3` — "system-scoped orchestration boundaries only." |
-| Shell-owned mediation surface | `state_machine/mediation_surface` | `MyCiteV2/packages/state_machine/mediation_surface/README.md:3` — "shell-owned mediation surface behavior." |
+| Asymmetric + symmetric key primitives | `core/crypto` | `micyte/core/crypto/README.md:3` — "Placeholder for pure cryptographic primitives split out from v1 `vault_session`." `micyte/core/crypto/__init__.py:1` — `"""Inert package scaffold."""` |
+| Contract model + Manager/Subordinate roles | `modules/domains/contracts` | `micyte/domains/contracts/README.md:3` — "Placeholder for contract domain semantics only." `__init__.py:1` inert. |
+| Cross-portal datum lookup / fill | `modules/domains/reference_exchange` | `micyte/domains/reference_exchange/README.md:3` — "Placeholder for reference-exchange domain semantics only." `__init__.py:1` inert. |
+| Sandbox orchestration (template publish/fill runtime) | `sandboxes/orchestration` | `fnd_app/packages/sandboxes/orchestration/README.md:3` — "shared sandbox orchestration helpers that do not own domain semantics." |
+| System-scoped orchestration boundary | `sandboxes/system` | `fnd_app/packages/sandboxes/system/README.md:3` — "system-scoped orchestration boundaries only." |
+| Shell-owned mediation surface | `state_machine/mediation_surface` | `micyte/state_machine/mediation_surface/README.md:3` — "shell-owned mediation surface behavior." |
 
 ### Partial / related code that exists
 
 - **"Network" today is local-only, read-only.**
-  `MyCiteV2/packages/modules/cross_domain/network_root/service.py:20`
+  `fnd_app/packages/modules/cross_domain/network_root/service.py:20`
   (`NetworkRootReadModelService`) is a *presenter* over the portal-instance
   **system-log workbench**, not a network transport. Its own notes are explicit:
   `service.py:60-62` — "NETWORK is the portal-instance system-log workbench …
@@ -83,7 +83,7 @@ package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
   filters over the *local* audit log, **not** cross-portal contracts.
 
 - **Read-model port for that surface.**
-  `MyCiteV2/packages/ports/network_root_read_model/contracts.py:44`
+  `micyte/ports/network_root_read_model/contracts.py:44`
   (`NetworkRootReadModelRequest`) carries `portal_tenant_id` + optional
   `portal_domain` (`:45-47`); the port protocol
   `NetworkRootReadModelPort.read_network_root_model` is at
@@ -91,22 +91,22 @@ package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
   `msn_registry` read — but it currently returns only local system-log payloads.
 
 - **Domain validation (no IP support yet).**
-  `MyCiteV2/packages/core/identities/domains.py:14` (`is_plain_domain`) and
+  `micyte/core/identities/domains.py:14` (`is_plain_domain`) and
   `:37` (`require_plain_domain`) validate plain DNS domains only. There is **no**
   IPv4/IPv6 validation, which the `msn_id` contact-card field requires
   ("domain reachable and/or IPv4 and/or IPv6").
 
 - **Portal authority read seam.**
-  `MyCiteV2/packages/ports/portal_authority/contracts.py:49`
+  `micyte/ports/portal_authority/contracts.py:49`
   (`PortalAuthorityRequest`) and `:81` (`PortalAuthoritySource`: capabilities +
   `tool_exposure_policy` + `ownership_posture`). Its README is explicit that
   **grant mutation, identity hashing, and runtime composition are out of scope
-  this phase** (`MyCiteV2/packages/ports/portal_authority/README.md:15-19`).
+  this phase** (`micyte/ports/portal_authority/README.md:15-19`).
   This seam describes *what a portal exposes* locally; a network layer would
   consume it to decide what to advertise on a contact card.
 
 - **The only "symmetric_key" reference is a deny-list, not an implementation.**
-  `MyCiteV2/packages/modules/cross_domain/local_audit/service.py:25` lists
+  `fnd_app/packages/modules/cross_domain/local_audit/service.py:25` lists
   `"symmetric_key"` inside `FORBIDDEN_LOCAL_AUDIT_KEYS`
   (`service.py:18-30`, alongside `private_key`, `hmac_key`, `api_key`, …). i.e.
   the codebase already *forbids persisting* key material into the local audit
@@ -115,18 +115,18 @@ package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
 ### Building blocks that already work (the network layer will compose these)
 
 - **MSS form + version hash.**
-  `MyCiteV2/packages/core/mss/datum_identity.py:101`
+  `micyte/core/mss/datum_identity.py:101`
   (`compute_mss_hash`) computes the canonical MSS version hash under policy
   `MSS_VERSION_HASH_POLICY = "mos.mss_sha256_v1"` (`:13`); hyphae chains derive
   at `:126` (`derive_hyphae_chain`). The SQL-side equivalents
   `build_document_version_identity` / `build_document_semantics` /
   `preview_document_insert` live in
-  `MyCiteV2/packages/adapters/sql/datum_semantics.py:136`, `:209`, `:474`.
+  `micyte/adapters/sql/datum_semantics.py:136`, `:209`, `:474`.
   → The Subordinate's "recompile the MSS form" step *is* a call into this
   existing identity engine. See `61-mss-and-hyphae-form-spec.md`.
 
 - **WORKBOOK-YAML template/transport form.**
-  `MyCiteV2/packages/core/datum_io/codec.py:97` (`workbook_to_yaml`) and `:112`
+  `micyte/core/datum_io/codec.py:97` (`workbook_to_yaml`) and `:112`
   (`workbook_from_yaml`), schema
   `DATUM_IO_WORKBOOK_SCHEMA = "mycite.v2.datum_io.workbook.v1"` (`:26`), with
   single-document `to_yaml`/`from_yaml` at `:55`/`:88`. The module docstring
@@ -135,7 +135,7 @@ package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
   Manager publishes. See `70-yaml-materialization-pipeline.md`.
 
 - **`msn_id`-keyed document naming.**
-  `MyCiteV2/packages/core/document_naming/__init__.py:35` (`ParsedDocumentId`,
+  `micyte/core/document_naming/__init__.py:35` (`ParsedDocumentId`,
   field `msn_id` at `:39`), `:65` (`format_canonical_document_id`, which
   validates `msn_id` at `:82-84`), and `:109` (`parse_canonical_document_id`).
   Canonical ids already embed an `msn_id` segment

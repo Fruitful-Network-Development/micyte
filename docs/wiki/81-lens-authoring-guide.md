@@ -34,7 +34,7 @@ author one by:
 ### The `Lens` contract
 
 Every lens is a stateless codec defined by the abstract base class in
-[`MyCiteV2/packages/state_machine/lens/base.py:13`](../../MyCiteV2/packages/state_machine/lens/base.py):
+[`micyte/state_machine/lens/base.py:13`](../../micyte/state_machine/lens/base.py):
 
 ```python
 class Lens(ABC):
@@ -56,7 +56,7 @@ class Lens(ABC):
 ```
 
 The three methods and their roles
-([`base.py:18`](../../MyCiteV2/packages/state_machine/lens/base.py)):
+([`base.py:18`](../../micyte/state_machine/lens/base.py)):
 
 - **`decode(canonical_value)` → display value.** Called on the read path to turn
   the stored canonical value into what the workbench renders. This is where the
@@ -70,23 +70,23 @@ The three methods and their roles
   `()` (accept everything); override it when your lens has constraints.
 
 Each lens also sets a unique class attribute `lens_id`
-([`base.py:16`](../../MyCiteV2/packages/state_machine/lens/base.py)) — a short
+([`base.py:16`](../../micyte/state_machine/lens/base.py)) — a short
 stable string used to label the lens in surfaces and in the staging envelope.
 
 ### Where lenses live
 
 | Concern | File |
 | --- | --- |
-| Abstract `Lens` + built-in lenses | [`MyCiteV2/packages/state_machine/lens/base.py`](../../MyCiteV2/packages/state_machine/lens/base.py) |
-| Family / value-kind / overlay dispatch | [`MyCiteV2/packages/state_machine/lens/registry.py`](../../MyCiteV2/packages/state_machine/lens/registry.py) |
-| Public exports | [`MyCiteV2/packages/state_machine/lens/__init__.py`](../../MyCiteV2/packages/state_machine/lens/__init__.py) |
-| Package authority notes | [`MyCiteV2/packages/state_machine/lens/README.md`](../../MyCiteV2/packages/state_machine/lens/README.md) |
-| Display application (read path) | [`MyCiteV2/packages/tools/workbench_ui/service.py`](../../MyCiteV2/packages/tools/workbench_ui/service.py) |
-| Encode + validate on write (staging) | [`MyCiteV2/packages/state_machine/nimm/staging.py`](../../MyCiteV2/packages/state_machine/nimm/staging.py) |
-| Registry tests | [`MyCiteV2/tests/unit/test_state_machine_lens_registry.py`](../../MyCiteV2/tests/unit/test_state_machine_lens_registry.py) |
+| Abstract `Lens` + built-in lenses | [`micyte/state_machine/lens/base.py`](../../micyte/state_machine/lens/base.py) |
+| Family / value-kind / overlay dispatch | [`micyte/state_machine/lens/registry.py`](../../micyte/state_machine/lens/registry.py) |
+| Public exports | [`micyte/state_machine/lens/__init__.py`](../../micyte/state_machine/lens/__init__.py) |
+| Package authority notes | [`micyte/state_machine/lens/README.md`](../../micyte/state_machine/lens/README.md) |
+| Display application (read path) | [`micyte/tools/workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py) |
+| Encode + validate on write (staging) | [`micyte/state_machine/nimm/staging.py`](../../micyte/state_machine/nimm/staging.py) |
+| Registry tests | [`fnd_app/tests/unit/test_state_machine_lens_registry.py`](../../fnd_app/tests/unit/test_state_machine_lens_registry.py) |
 
 The built-in lenses you can reuse or subclass (all in
-[`base.py`](../../MyCiteV2/packages/state_machine/lens/base.py)): `IdentityLens`
+[`base.py`](../../micyte/state_machine/lens/base.py)): `IdentityLens`
 (pass-through), `TrimmedStringLens` (trims whitespace; a convenient base),
 `SamrasTitleLens`, `EmailAddressLens`, `SecretReferenceLens`,
 `NumericHyphenLens`, and `BinaryTextLens` (binary→ASCII with a bit-count
@@ -97,7 +97,7 @@ fallback — the nominal-ASCII example).
 ### 1. Implement a `Lens` subclass
 
 Subclass `Lens` directly, or — more commonly — subclass `TrimmedStringLens`
-([`base.py:41`](../../MyCiteV2/packages/state_machine/lens/base.py)) when your
+([`base.py:41`](../../micyte/state_machine/lens/base.py)) when your
 canonical value is text and you want whitespace trimming for free. Give it a
 unique `lens_id`. Implement the methods your transform needs; `TrimmedStringLens`
 already provides a sane `decode`/`encode`, so you only override what differs.
@@ -148,24 +148,24 @@ the canonical magnitude, it only makes it legible. Your lens may be symmetric
 ### 3. Register it under the right key in `DatumLensRegistry`
 
 Auto-resolution lives in
-[`MyCiteV2/packages/state_machine/lens/registry.py`](../../MyCiteV2/packages/state_machine/lens/registry.py).
+[`micyte/state_machine/lens/registry.py`](../../micyte/state_machine/lens/registry.py).
 `DatumLensRegistry.__init__`
-([`registry.py:28`](../../MyCiteV2/packages/state_machine/lens/registry.py))
+([`registry.py:28`](../../micyte/state_machine/lens/registry.py))
 holds three dispatch maps, and `resolve`
-([`registry.py:51`](../../MyCiteV2/packages/state_machine/lens/registry.py))
+([`registry.py:51`](../../micyte/state_machine/lens/registry.py))
 checks them **in priority order**:
 
 1. **`_family_lenses`** — keyed by `recognized_family` (e.g.
    `"nominal_babelette"` → `BinaryTextLens()`)
-   ([`registry.py:29`](../../MyCiteV2/packages/state_machine/lens/registry.py)).
+   ([`registry.py:29`](../../micyte/state_machine/lens/registry.py)).
    **Highest priority.**
 2. **`_overlay_lenses`** — keyed by `overlay_kind`
-   ([`registry.py:45`](../../MyCiteV2/packages/state_machine/lens/registry.py)).
+   ([`registry.py:45`](../../micyte/state_machine/lens/registry.py)).
 3. **`_value_kind_lenses`** — keyed by `primary_value_kind` (e.g.
    `"binary_string"` → `BinaryTextLens()`)
-   ([`registry.py:38`](../../MyCiteV2/packages/state_machine/lens/registry.py)).
+   ([`registry.py:38`](../../micyte/state_machine/lens/registry.py)).
 4. Falls back to `IdentityLens` (`matched_on="fallback"`) if nothing matches
-   ([`registry.py:67`](../../MyCiteV2/packages/state_machine/lens/registry.py)).
+   ([`registry.py:67`](../../micyte/state_machine/lens/registry.py)).
 
 To wire in your lens, add an instance under the appropriate key. Bind to a
 **family** when every datum in that recognized family should get the lens; bind
@@ -183,10 +183,10 @@ self._family_lenses = {
 
 All keys are lowercased before lookup — `resolve` calls `_as_text(...).lower()`
 on the inputs
-([`registry.py:58`](../../MyCiteV2/packages/state_machine/lens/registry.py)) — so
+([`registry.py:58`](../../micyte/state_machine/lens/registry.py)) — so
 register keys in lower case. If your lens lives in a new module, also export it
 from
-[`MyCiteV2/packages/state_machine/lens/__init__.py`](../../MyCiteV2/packages/state_machine/lens/__init__.py)
+[`micyte/state_machine/lens/__init__.py`](../../micyte/state_machine/lens/__init__.py)
 so callers can import it by name.
 
 ### 4. Confirm the workbench applies it
@@ -194,10 +194,10 @@ so callers can import it by name.
 The read path is in the workbench UI read service. For each datum row,
 `_row_items` calls `resolve_datum_lens(...)` with the row's recognized family,
 primary value kind, and overlay kind
-([`service.py:528`](../../MyCiteV2/packages/tools/workbench_ui/service.py)), then
+([`service.py:528`](../../micyte/tools/workbench_ui/service.py)), then
 calls the resolved lens's `decode` on the row's `primary_value_token` to build
 the `display_value`
-([`service.py:533`](../../MyCiteV2/packages/tools/workbench_ui/service.py)):
+([`service.py:533`](../../micyte/tools/workbench_ui/service.py)):
 
 ```python
 lens_resolution = resolve_datum_lens(
@@ -214,16 +214,16 @@ display_value = _first_non_empty(
 
 The row also carries `resolved_lens` (the `lens_id`) and `resolved_lens_match`
 (which map matched: `family` / `overlay` / `value_kind` / `fallback`)
-([`service.py:558`](../../MyCiteV2/packages/tools/workbench_ui/service.py)), and
+([`service.py:558`](../../micyte/tools/workbench_ui/service.py)), and
 the selected row surfaces them in a "Lens Resolution" interface panel
-([`service.py:846`](../../MyCiteV2/packages/tools/workbench_ui/service.py)). Use
+([`service.py:846`](../../micyte/tools/workbench_ui/service.py)). Use
 those fields to verify your lens resolved as intended: a matching datum should
 report your `lens_id` with the expected `resolved_lens_match`.
 
 ### 5. Add validation messages (write path)
 
 On the write/staging path, `StagingArea.stage_with_lens`
-([`staging.py:60`](../../MyCiteV2/packages/state_machine/nimm/staging.py)) runs
+([`staging.py:60`](../../micyte/state_machine/nimm/staging.py)) runs
 your lens against the user's display input:
 
 ```python
@@ -240,17 +240,17 @@ replacement = StagedValue(
 
 So `validate_display` runs **before** `encode`, and its issue codes are stored on
 the `StagedValue` and carried into the compiled NIMM manipulation envelope
-([`staging.py:90`](../../MyCiteV2/packages/state_machine/nimm/staging.py)). Return
+([`staging.py:90`](../../micyte/state_machine/nimm/staging.py)). Return
 short, stable, machine-readable codes (snake_case), not prose — mirror the
 built-ins. For example, `BinaryTextLens.validate_display`
-([`base.py:139`](../../MyCiteV2/packages/state_machine/lens/base.py)) returns
+([`base.py:139`](../../micyte/state_machine/lens/base.py)) returns
 `("binary_text_required",)` for empty input and `("binary_text_invalid",)` when
 any character is not `0`/`1`. Surfaces map these codes to human messages; the
 lens only emits the codes.
 
 ## Worked example — `BinaryTextLens`
 
-`BinaryTextLens` ([`base.py:115`](../../MyCiteV2/packages/state_machine/lens/base.py))
+`BinaryTextLens` ([`base.py:115`](../../micyte/state_machine/lens/base.py))
 is the canonical "show the nominal ASCII value instead of the raw binary
 magnitude" lens. It subclasses `TrimmedStringLens`, so `encode` is inherited:
 the **canonical value stored stays the binary string** (only trimmed). All the
@@ -296,13 +296,13 @@ That `"<N> bits"` **bit-count fallback** is the key design move: a lens that
 makes a value legible when it can must still produce *something* honest when it
 cannot — never an exception, never a misleading partial string.
 
-`validate_display` ([`base.py:139`](../../MyCiteV2/packages/state_machine/lens/base.py))
+`validate_display` ([`base.py:139`](../../micyte/state_machine/lens/base.py))
 guards the write side: a stored canonical value must be a non-empty pure-binary
 string (`("binary_text_required",)` / `("binary_text_invalid",)`).
 
 The registry maps three recognized families and the `binary_string` value kind
 to this lens
-([`registry.py:29`](../../MyCiteV2/packages/state_machine/lens/registry.py)), so
+([`registry.py:29`](../../micyte/state_machine/lens/registry.py)), so
 e.g. a `nominal_babelette` datum automatically renders its binary magnitude as
 nominal ASCII text in the workbench, with no per-datum configuration.
 
@@ -324,11 +324,11 @@ nominal ASCII text in the workbench, with no per-datum configuration.
   never raise on malformed input — return a safe display string or an issue code.
 - **Resolution is priority-ordered.** `family` beats `overlay` beats
   `value_kind` beats the identity fallback
-  ([`registry.py:51`](../../MyCiteV2/packages/state_machine/lens/registry.py)).
+  ([`registry.py:51`](../../micyte/state_machine/lens/registry.py)).
   If your lens does not appear to apply, check whether a higher-priority key
   already matched the datum.
 - **Register keys in lower case.** `resolve` lowercases its inputs before lookup
-  ([`registry.py:58`](../../MyCiteV2/packages/state_machine/lens/registry.py)),
+  ([`registry.py:58`](../../micyte/state_machine/lens/registry.py)),
   so an upper/mixed-case key will never match.
 - **Emit codes, not sentences.** `validate_display` returns short snake_case
   issue codes; human-readable copy is the surface's job.
@@ -351,7 +351,7 @@ The vision:
   given surface/session will be a Control-Panel toggle, decoupling "a lens
   exists and is bound" (Utilities) from "a lens is currently applied" (Control
   Panel). Today the closest analogue is the workbench `interpreted` vs `raw`
-  lens mode ([`service.py:34`](../../MyCiteV2/packages/tools/workbench_ui/service.py)),
+  lens mode ([`service.py:34`](../../micyte/tools/workbench_ui/service.py)),
   which is a coarse global switch, not a per-lens toggle.
 - **Bound to a flagged hyphae VALUE or a family's root common datum.** Lenses
   will key off a datum's **flagged hyphae value** or a **family's root common
@@ -368,11 +368,11 @@ between today's auto-resolution and the managed model), see
 ## Testing your lens
 
 Follow the pattern in
-[`MyCiteV2/tests/unit/test_state_machine_lens_registry.py`](../../MyCiteV2/tests/unit/test_state_machine_lens_registry.py).
+[`fnd_app/tests/unit/test_state_machine_lens_registry.py`](../../fnd_app/tests/unit/test_state_machine_lens_registry.py).
 It is a plain `unittest` module with two kinds of checks you should replicate:
 
 ```python
-from MyCiteV2.packages.state_machine.lens import BinaryTextLens, resolve_datum_lens
+from micyte.state_machine.lens import BinaryTextLens, resolve_datum_lens
 
 
 class StateMachineLensRegistryTests(unittest.TestCase):
@@ -404,7 +404,7 @@ For your own lens, add:
 Run just this module from the repo root:
 
 ```bash
-python -m pytest MyCiteV2/tests/unit/test_state_machine_lens_registry.py
+python -m pytest fnd_app/tests/unit/test_state_machine_lens_registry.py
 ```
 
 ## See also
@@ -412,8 +412,8 @@ python -m pytest MyCiteV2/tests/unit/test_state_machine_lens_registry.py
 - [00 — Overview and Glossary](00-overview-and-glossary.md)
 - [40 — Tools and Lenses, As-Built](40-tools-and-lenses-asbuilt.md) *(forward ref)*
 - [60 — Canonical Datum and Hyphae Flags](60-canonical-datum-and-hyphae-flags.md) *(forward ref)*
-- [`lens/README.md`](../../MyCiteV2/packages/state_machine/lens/README.md) — package authority + contract notes
-- [`lens/base.py`](../../MyCiteV2/packages/state_machine/lens/base.py) — `Lens` + built-ins
-- [`lens/registry.py`](../../MyCiteV2/packages/state_machine/lens/registry.py) — `DatumLensRegistry` dispatch
-- [`workbench_ui/service.py`](../../MyCiteV2/packages/tools/workbench_ui/service.py) — display application
-- [`nimm/staging.py`](../../MyCiteV2/packages/state_machine/nimm/staging.py) — encode + validate on write
+- [`lens/README.md`](../../micyte/state_machine/lens/README.md) — package authority + contract notes
+- [`lens/base.py`](../../micyte/state_machine/lens/base.py) — `Lens` + built-ins
+- [`lens/registry.py`](../../micyte/state_machine/lens/registry.py) — `DatumLensRegistry` dispatch
+- [`workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py) — display application
+- [`nimm/staging.py`](../../micyte/state_machine/nimm/staging.py) — encode + validate on write

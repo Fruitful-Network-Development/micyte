@@ -15,6 +15,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from micyte.core.datum_ops import field_registry as _fr
+
 # Re-exported for one-stop importing by the write-path consumers.
 from micyte.core.document_naming import (
     format_canonical_document_id,
@@ -42,13 +44,14 @@ TENANT = "fnd"
 TITLE_BITS = 512            # niu-baciloid-256-64 title width
 NOMINAL_BITS = 136          # nominal-256-17 = 17 bytes x 8 bits
 
-# Reference (rf.) markers (positional pairs shape).
-RF_LCL_ID = "rf.3-1-5"      # lcl id-babelette: record identity + cross-doc refs
-RF_TXA_ID = "rf.3-1-1"      # SAMRAS-babelette-txa_id: structural/type parents
-RF_TITLE = "rf.3-1-2"       # title-babelette (512-bit ASCII)
-RF_COORD = "rf.3-1-3"       # HOPS-babelette-coordinate (plot polygons)
-RF_UTC = "rf.3-1-6"         # HOPS-babelette-UTC (dates)
-RF_NOMINAL = "rf.3-1-7"     # nominal-babelette (weight/cost/amount placeholders)
+# Reference (rf.) markers (positional pairs shape). Single-sourced from the field
+# registry (the FARM/agro namespace) — one definition of each token, network-wide.
+RF_LCL_ID = _fr.marker(_fr.FARM, "lcl_id")     # rf.3-1-5 — record identity + cross-doc refs
+RF_TXA_ID = _fr.marker(_fr.FARM, "txa_id")     # rf.3-1-1 — structural/type parents
+RF_TITLE = _fr.marker(_fr.FARM, "title")       # rf.3-1-2 — title-babelette (512-bit ASCII)
+RF_COORD = _fr.marker(_fr.FARM, "coordinate")  # rf.3-1-3 — HOPS coordinate (plot polygons)
+RF_UTC = _fr.marker(_fr.FARM, "utc")           # rf.3-1-6 — HOPS-UTC (dates)
+RF_NOMINAL = _fr.marker(_fr.FARM, "nominal")   # rf.3-1-7 — weight/cost/amount placeholders
 
 # Agro anchor addresses.
 ANCHOR_HOPS_CHRONO_MAG = "1-1-6"   # HOPS-chronological magnitude (the agro clock)

@@ -13,7 +13,7 @@ as the authority.
 
 The convention this page builds on already exists and is already documented in
 code as "the standardized, interface-ready YAML form tools/lenses/UI consume"
-(`MyCiteV2/packages/core/datum_ops/workbook.py:5`). What does not yet exist is a
+(`micyte/core/datum_ops/workbook.py:5`). What does not yet exist is a
 *single* surface: the **write** path runs through WORKBOOK-YAML, while the
 **read/render** path is a parallel SQL→JSON projection that bypasses it. This
 page is a proposal to close that split.
@@ -65,7 +65,7 @@ materializers is the opposite of one working surface.
 
 ### The WORKBOOK-YAML convention exists (transport only)
 
-`MyCiteV2/packages/core/datum_io/codec.py` defines the codec. It is explicitly a
+`micyte/core/datum_io/codec.py` defines the codec. It is explicitly a
 transport format — *"This is a TRANSPORT format only: the MOS database remains
 the canonical authority … nothing here writes datum state to disk"*
 (`codec.py:1`). The multi-sheet envelope is `mycite.v2.datum_io.workbook.v1`
@@ -76,7 +76,7 @@ the canonical authority … nothing here writes datum state to disk"*
 round-trip guarantee.
 
 The `Workbook ⇄ WORKBOOK-YAML` bridge sits one layer up in
-`MyCiteV2/packages/core/datum_ops/workbook.py`. Its module docstring names this
+`micyte/core/datum_ops/workbook.py`. Its module docstring names this
 form *"the standardized, interface-ready YAML form tools/lenses/UI consume.
 Transport only; never persisted (MOS-only storage rule)"* (`workbook.py:5`). It
 exposes `to_yaml(workbook)` (`workbook.py:16`) and `from_yaml(text) -> Workbook`
@@ -85,7 +85,7 @@ id.
 
 ### The write path runs through WORKBOOK-YAML
 
-`MyCiteV2/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`
+`fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py`
 implements the `apply_workbook` operation (`...:39`, dispatched at `...:576`).
 Its core, `_run_workbook_mutation_action` (`...:480`), is the canonical
 edited-YAML → MOS pipeline:
@@ -99,7 +99,7 @@ result = execute_migration(authority_db_file, plan, tenant_id=tenant_id)  # ...:
 
 `stage`/`validate`/`preview` run the pure planner only (no writes); `apply`
 runs the store-bound executor. The executor,
-`MyCiteV2/packages/adapters/sql/datum_workbook_apply.py`, loads a sandbox into a
+`micyte/adapters/sql/datum_workbook_apply.py`, loads a sandbox into a
 `Workbook` (`load_workbook`, `datum_workbook_apply.py:36`) and applies the plan
 as *backup → write → index → verify* (`execute_migration`,
 `datum_workbook_apply.py:103`/`:111`), restoring from backup on a verify
@@ -107,7 +107,7 @@ failure. So the write side already treats WORKBOOK-YAML as its working surface.
 
 ### The read/render path does NOT run through WORKBOOK-YAML
 
-`MyCiteV2/packages/tools/workbench_ui/service.py` (~990 LOC) is the render path.
+`micyte/tools/workbench_ui/service.py` (~990 LOC) is the render path.
 `WorkbenchUiReadService` (`service.py:468`) reads the authoritative catalog
 directly out of SQL — `read_authoritative_datum_documents(...)`
 (`service.py:598`) — and `_compute_surface` (`service.py:630`) filters, sorts,
@@ -131,7 +131,7 @@ write sides a *shared materialized working form*. The two conventions remain.
 ### The modular functions exist (pure ops)
 
 The "modular functions for working with and on the runtime form" already exist as
-pure, store-agnostic ops in `MyCiteV2/packages/core/datum_ops/`. The package
+pure, store-agnostic ops in `micyte/core/datum_ops/`. The package
 docstring describes the model exactly: *"A sandbox loads as a `Workbook` (named
 sheets); operations transform it in memory and a single store-bound executor
 persists the cascade"* (`datum_ops/__init__.py:6`). The public surface

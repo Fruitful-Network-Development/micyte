@@ -2,7 +2,7 @@
 
 Authority: [../../../../docs/plans/v2-authority_stack.md](../../../../docs/plans/v2-authority_stack.md)
 
-`packages/core/datum_refs/` owns the phase-02 MVP datum-ref surface.
+`micyte/core/datum_refs/` owns the phase-02 MVP datum-ref surface.
 
 Implemented in this phase:
 

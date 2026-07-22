@@ -31,7 +31,7 @@ def compute_mss_hash(datum_document: AuthoritativeDatumDocument) -> dict[str, An
     """Return the canonical MSS version identity for a datum document.
 
     Produces the same version_hash as build_document_version_identity in
-    MyCiteV2/packages/adapters/sql/datum_semantics.py. The hash is deterministic
+    fnd_app/packages/adapters/sql/datum_semantics.py. The hash is deterministic
     over sorted rows serialized with canonical JSON (sort_keys, no whitespace).
 
     Returns dict with keys: policy, version_hash, canonical_payload.

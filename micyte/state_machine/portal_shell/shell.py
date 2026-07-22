@@ -596,8 +596,8 @@ class PortalShellResolution:
     reason_message: str = ""
 
 
-def build_portal_surface_catalog() -> tuple[PortalSurfaceCatalogEntry, ...]:
-    return _shell_registry.build_portal_surface_catalog()
+def build_portal_surface_catalog(*, network_enabled: bool = True) -> tuple[PortalSurfaceCatalogEntry, ...]:
+    return _shell_registry.build_portal_surface_catalog(network_enabled=network_enabled)
 
 
 def build_portal_tool_registry_entries() -> tuple[PortalToolRegistryEntry, ...]:

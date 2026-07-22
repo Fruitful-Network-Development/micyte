@@ -23,50 +23,50 @@ MOS rules — canonical-only writes, one document per row, MSS form.
 
 | `path:line` | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/ports/datum_store/contracts.py:123` | `AuthoritativeDatumDocument` — the canonical datum-document value object: `document_id`, `source_kind` (`system_anthology`/`sandbox_source`), `rows`, `anchor_rows`, `tool_id`, `document_metadata`. | 775 |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:89` | `AuthoritativeDatumDocumentRow` (`datum_address` + `raw`) — one datum address-line ("Row" in the unit brief) inside a document. | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:264` | `AuthoritativeDatumDocumentCatalogResult` — the whole-tenant catalog (tuple of documents + `source_files` + `readiness_status`). | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:717` | `SystemDatumStorePort` — read the system resource workbench surface. | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:723` | `AuthoritativeDatumDocumentPort` — read authoritative documents. | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:732` | `AuthoritativeDatumDocumentMutationPort` — adds `read_document_version_identity`, `replace_authoritative_document`, `delete_authoritative_document`. | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:760` | `PublicationTenantSummaryPort` — read one tenant profile projection. | — |
-| `MyCiteV2/packages/ports/datum_store/contracts.py:770` | `PublicationProfileBasicsWritePort` — one bounded profile-basics write with read-after-write confirmation. | — |
-| `MyCiteV2/packages/ports/datum_store/__init__.py:1` | Public re-export surface for the port. | 53 |
-| `MyCiteV2/packages/ports/datum_store/README.md:1` | Port README (currently a one-line placeholder). | — |
+| `micyte/ports/datum_store/contracts.py:123` | `AuthoritativeDatumDocument` — the canonical datum-document value object: `document_id`, `source_kind` (`system_anthology`/`sandbox_source`), `rows`, `anchor_rows`, `tool_id`, `document_metadata`. | 775 |
+| `micyte/ports/datum_store/contracts.py:89` | `AuthoritativeDatumDocumentRow` (`datum_address` + `raw`) — one datum address-line ("Row" in the unit brief) inside a document. | — |
+| `micyte/ports/datum_store/contracts.py:264` | `AuthoritativeDatumDocumentCatalogResult` — the whole-tenant catalog (tuple of documents + `source_files` + `readiness_status`). | — |
+| `micyte/ports/datum_store/contracts.py:717` | `SystemDatumStorePort` — read the system resource workbench surface. | — |
+| `micyte/ports/datum_store/contracts.py:723` | `AuthoritativeDatumDocumentPort` — read authoritative documents. | — |
+| `micyte/ports/datum_store/contracts.py:732` | `AuthoritativeDatumDocumentMutationPort` — adds `read_document_version_identity`, `replace_authoritative_document`, `delete_authoritative_document`. | — |
+| `micyte/ports/datum_store/contracts.py:760` | `PublicationTenantSummaryPort` — read one tenant profile projection. | — |
+| `micyte/ports/datum_store/contracts.py:770` | `PublicationProfileBasicsWritePort` — one bounded profile-basics write with read-after-write confirmation. | — |
+| `micyte/ports/datum_store/__init__.py:1` | Public re-export surface for the port. | 53 |
+| `micyte/ports/datum_store/README.md:1` | Port README (currently a one-line placeholder). | — |
 
 ### SQL authority adapter (the writer)
 
 | `path:line` | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/adapters/sql/datum_store.py:111` | `SqliteSystemDatumStoreAdapter` — implements all four ports against SQLite. The canonical authority. | 1066 |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:182` | `store_authoritative_catalog` — full-catalog UPSERT: rewrites every doc's + row's semantics for the tenant. | — |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:296` | `replace_single_document_efficient` — O(rows-in-one-doc) swap; the hot path for single-document edits (avoids the full re-encode). | — |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:498` | `bootstrap_from_filesystem` — one-way seed: filesystem catalog → SQL (optionally canonicalizing legacy ids). | — |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:580` | `read_authoritative_datum_documents` — cached catalog read + canonical-id projection. | — |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:108` | `_GLOBAL_CATALOG_CACHE` — module-level `(db_path, tenant_id) → (mtime_ns, catalog)` cache shared across ephemeral adapter instances; mtime-invalidated, also popped on every write. | — |
-| `MyCiteV2/packages/adapters/sql/datum_store.py:45` | `NonCanonicalDocumentIdError` — raised when a write would persist a non-canonical id (unless `allow_legacy_writes`). | — |
-| `MyCiteV2/packages/adapters/sql/datum_semantics.py:209` | `build_document_semantics` — the address/hyphae/MSS engine: per-row hyphae chains, semantic hashes, version identity. **Misplaced here** (see Vision-fit). | 663 |
-| `MyCiteV2/packages/adapters/sql/datum_semantics.py:136` | `build_document_version_identity` — MSS SHA-256 over the canonicalized row set (`mos.mss_sha256_v1`). | — |
-| `MyCiteV2/packages/adapters/sql/datum_semantics.py:474` | `preview_document_insert` / `_delete` (526) / `_move` (587) — pure address-remap mutations consumed by the adapter's apply/preview methods. | — |
-| `MyCiteV2/packages/adapters/sql/datum_workbook_apply.py:103` | `execute_migration` — store-bound workbook executor: backup → write-in-order → index → verify → restore-on-failure. | 164 |
-| `MyCiteV2/packages/adapters/sql/_sqlite.py:9` | `SCHEMA_SQL` — the full DB schema (snapshot tables + `documents` index + semantics tables + directive-context). | 155 |
-| `MyCiteV2/packages/adapters/sql/_sqlite.py:138` | `connect_sqlite` / `open_sqlite` — WAL, `foreign_keys=ON`, idempotent schema bootstrap. | — |
-| `MyCiteV2/packages/adapters/sql/directive_context.py:54` | `SqliteDirectiveContextAdapter` — sibling adapter; shared-shell directive overlays keyed by `(portal_instance_id, tool_id, hyphae_hash, version_hash)`. | 223 |
-| `MyCiteV2/packages/adapters/sql/portal_authority.py:23` | `SqlitePortalAuthorityAdapter` — sibling adapter; portal-scope grants / tool-exposure read seam. | 103 |
+| `micyte/adapters/sql/datum_store.py:111` | `SqliteSystemDatumStoreAdapter` — implements all four ports against SQLite. The canonical authority. | 1066 |
+| `micyte/adapters/sql/datum_store.py:182` | `store_authoritative_catalog` — full-catalog UPSERT: rewrites every doc's + row's semantics for the tenant. | — |
+| `micyte/adapters/sql/datum_store.py:296` | `replace_single_document_efficient` — O(rows-in-one-doc) swap; the hot path for single-document edits (avoids the full re-encode). | — |
+| `micyte/adapters/sql/datum_store.py:498` | `bootstrap_from_filesystem` — one-way seed: filesystem catalog → SQL (optionally canonicalizing legacy ids). | — |
+| `micyte/adapters/sql/datum_store.py:580` | `read_authoritative_datum_documents` — cached catalog read + canonical-id projection. | — |
+| `micyte/adapters/sql/datum_store.py:108` | `_GLOBAL_CATALOG_CACHE` — module-level `(db_path, tenant_id) → (mtime_ns, catalog)` cache shared across ephemeral adapter instances; mtime-invalidated, also popped on every write. | — |
+| `micyte/adapters/sql/datum_store.py:45` | `NonCanonicalDocumentIdError` — raised when a write would persist a non-canonical id (unless `allow_legacy_writes`). | — |
+| `micyte/adapters/sql/datum_semantics.py:209` | `build_document_semantics` — the address/hyphae/MSS engine: per-row hyphae chains, semantic hashes, version identity. **Misplaced here** (see Vision-fit). | 663 |
+| `micyte/adapters/sql/datum_semantics.py:136` | `build_document_version_identity` — MSS SHA-256 over the canonicalized row set (`mos.mss_sha256_v1`). | — |
+| `micyte/adapters/sql/datum_semantics.py:474` | `preview_document_insert` / `_delete` (526) / `_move` (587) — pure address-remap mutations consumed by the adapter's apply/preview methods. | — |
+| `micyte/adapters/sql/datum_workbook_apply.py:103` | `execute_migration` — store-bound workbook executor: backup → write-in-order → index → verify → restore-on-failure. | 164 |
+| `micyte/adapters/sql/_sqlite.py:9` | `SCHEMA_SQL` — the full DB schema (snapshot tables + `documents` index + semantics tables + directive-context). | 155 |
+| `micyte/adapters/sql/_sqlite.py:138` | `connect_sqlite` / `open_sqlite` — WAL, `foreign_keys=ON`, idempotent schema bootstrap. | — |
+| `micyte/adapters/sql/directive_context.py:54` | `SqliteDirectiveContextAdapter` — sibling adapter; shared-shell directive overlays keyed by `(portal_instance_id, tool_id, hyphae_hash, version_hash)`. | 223 |
+| `micyte/adapters/sql/portal_authority.py:23` | `SqlitePortalAuthorityAdapter` — sibling adapter; portal-scope grants / tool-exposure read seam. | 103 |
 
 ### Filesystem adapter (read-only seed/mirror) + core naming + accessor
 
 | `path:line` | Role | LOC |
 |---|---|---|
-| `MyCiteV2/packages/adapters/filesystem_datum/live_system_datum_store.py:188` | `FilesystemSystemDatumStoreAdapter` — **read-only** discovery of `data/system/sources/*.json` + `data/sandbox/<tool>/sources/*.json` + tool anchors. | 856 |
-| `MyCiteV2/packages/adapters/filesystem_datum/live_system_datum_store.py:347` | `read_authoritative_datum_documents` — the directory walk that produces the legacy-keyed catalog. | — |
-| `MyCiteV2/packages/adapters/filesystem_datum/live_system_datum_store.py:139` | `_document_id_for_path` — emits legacy ids (`system:anthology`, `sandbox:<tool>:<file>`). | — |
-| `MyCiteV2/packages/core/document_naming/__init__.py:65` | `format_canonical_document_id` — composes `lv./stl./cptr.` ids. | 338 |
-| `MyCiteV2/packages/core/document_naming/__init__.py:109` | `parse_canonical_document_id` — single validation point for canonical ids. | — |
-| `MyCiteV2/packages/core/document_naming/__init__.py:238` | `derive_canonical_id_from_legacy` — migrates `system:`/`sandbox:`/`payload:`/`cache:` → canonical. | — |
-| `MyCiteV2/instances/_shared/datum_store_accessor.py:26` | `_datum_store_for_authority_db` — neutral accessor; caches one canonical-only adapter per resolved DB path. | 45 |
-| `MyCiteV2/packages/sandboxes/system/__init__.py:1` | Empty stub (`"""Inert package scaffold."""`). | 1 |
-| `MyCiteV2/packages/sandboxes/orchestration/__init__.py:1` | Empty stub (`"""Inert package scaffold."""`). | 1 |
+| `micyte/adapters/filesystem_datum/live_system_datum_store.py:188` | `FilesystemSystemDatumStoreAdapter` — **read-only** discovery of `data/system/sources/*.json` + `data/sandbox/<tool>/sources/*.json` + tool anchors. | 856 |
+| `micyte/adapters/filesystem_datum/live_system_datum_store.py:347` | `read_authoritative_datum_documents` — the directory walk that produces the legacy-keyed catalog. | — |
+| `micyte/adapters/filesystem_datum/live_system_datum_store.py:139` | `_document_id_for_path` — emits legacy ids (`system:anthology`, `sandbox:<tool>:<file>`). | — |
+| `micyte/core/document_naming/__init__.py:65` | `format_canonical_document_id` — composes `lv./stl./cptr.` ids. | 338 |
+| `micyte/core/document_naming/__init__.py:109` | `parse_canonical_document_id` — single validation point for canonical ids. | — |
+| `micyte/core/document_naming/__init__.py:238` | `derive_canonical_id_from_legacy` — migrates `system:`/`sandbox:`/`payload:`/`cache:` → canonical. | — |
+| `fnd_app/instances/_shared/datum_store_accessor.py:26` | `_datum_store_for_authority_db` — neutral accessor; caches one canonical-only adapter per resolved DB path. | 45 |
+| `fnd_app/packages/sandboxes/system/__init__.py:1` | Empty stub (`"""Inert package scaffold."""`). | 1 |
+| `fnd_app/packages/sandboxes/orchestration/__init__.py:1` | Empty stub (`"""Inert package scaffold."""`). | 1 |
 
 ## How it works
 
@@ -150,7 +150,7 @@ reconciliation is captured in `61-mss-and-hyphae-form-spec.md` (forward ref).
 
 ### Sandbox modeling
 
-`MyCiteV2/packages/sandboxes/system/` and `sandboxes/orchestration/` are
+`fnd_app/packages/sandboxes/system/` and `sandboxes/orchestration/` are
 **empty stubs** — confirmed: each `__init__.py` is the single line
 `"""Inert package scaffold."""` and the READMEs say "Placeholder". There is no
 sandbox-orchestration engine.
@@ -202,7 +202,7 @@ The two stores are **not** kept in sync:
 - Filesystem JSON is dev/test/bootstrap only. Two architecture tests enforce
   this in production:
   - `test_no_filesystem_datum_authority_in_runtime.py` — no runtime module under
-    `MyCiteV2/instances/` may import `FilesystemSystemDatumStoreAdapter` or glob
+    `fnd_app/instances/` may import `FilesystemSystemDatumStoreAdapter` or glob
     `data/sandbox`/`data/system` paths (`:28-35`, `:68`).
   - `test_no_disk_datum_authorities.py` — no datum-doc-shaped JSON/.bin files may
     exist under the live `data/{system,sandbox,payloads/cache}/` (`:42`).

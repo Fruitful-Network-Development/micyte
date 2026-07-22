@@ -31,12 +31,23 @@ it does not move the data off your machine.
 
 ## Status
 
-**0.1.0 — alpha.** MiCyte installs as a **library**: the MOS database and its
+**0.2.0 — alpha.** MiCyte installs as a **library**: the MOS database and its
 tools, importable as `micyte`. There is no installer, no desktop app, and no
 `micyte` command yet; the design for running it as a local app is written down
 (`docs/wiki/95-desktop-app-local-db.md`) and not yet built. An install cannot
 report itself to a registry yet either — addresses resolve, but only inside a
 deployment.
+
+New since 0.1.0: a canonical **field registry** (the per-sandbox decoder ring
+mapping logical fields to datum addresses) with resolver adoption across the
+tools; the standardized **msn contact-card** field set and the flat `registry`
+card model; a `network_enabled` capability flag and one unified contract parser;
+and **per-chronology event-log documents** — recurring events (a farm stand's
+hours, a weekly market) live in `qc_log`/`hc_log`/`lc_log` docs in the
+system_log document family, one per chronological-HOPS structure, read by a
+single tolerant viewer (entities are nodes; events are events). The doc set is
+swept to the current layout (`micyte/*` paths, redrawn architecture diagram,
+reconciled delta map).
 
 You can read every line of what would run on your machine. That is the point.
 

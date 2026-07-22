@@ -78,12 +78,12 @@ the rule fails.
 
 | Stage | Check | Location |
 |---|---|---|
-| Test (architecture) | No on-disk datum docs | `MyCiteV2/tests/architecture/test_no_disk_datum_authorities.py` |
-| Test (architecture) | No filesystem adapter in runtime | `MyCiteV2/tests/architecture/test_no_filesystem_datum_authority_in_runtime.py` |
-| Test (unit) | MOS-internal consistency, FS↔MOS parity, ref integrity, no compat keys, required contracts present | `MyCiteV2/tests/unit/test_mos_program_closure.py` (5 tests) |
+| Test (architecture) | No on-disk datum docs | `fnd_app/tests/architecture/test_no_disk_datum_authorities.py` |
+| Test (architecture) | No filesystem adapter in runtime | `fnd_app/tests/architecture/test_no_filesystem_datum_authority_in_runtime.py` |
+| Test (unit) | MOS-internal consistency, FS↔MOS parity, ref integrity, no compat keys, required contracts present | `fnd_app/tests/unit/test_mos_program_closure.py` (5 tests) |
 | CI | Commit-gate on forbidden additions | `.github/workflows/tests.yml` → `no_disk_datum_docs` job |
-| Tool | One-shot parity audit | `MyCiteV2/scripts/audit_mos_filesystem_parity.py` |
-| Bootstrap | Per-sandbox ingestion scripts | `MyCiteV2/scripts/bootstrap_<sandbox>_anchor.py` |
+| Tool | One-shot parity audit | `fnd_app/scripts/audit_mos_filesystem_parity.py` |
+| Bootstrap | Per-sandbox ingestion scripts | `fnd_app/scripts/bootstrap_<sandbox>_anchor.py` |
 
 Tests marked `@unittest.expectedFailure` indicate invariants that depend
 on outstanding corrective work (Phases 6/7/9 of plan
@@ -98,7 +98,7 @@ Adding a new sandbox to MOS is exclusively via a one-shot bootstrap script:
 
 1. Stage the sandbox's source content as JSON files under
    `<evidence>/<sandbox>_bootstrap/legacy_staging/`.
-2. Create `MyCiteV2/scripts/bootstrap_<sandbox>_anchor.py` modeled on
+2. Create `fnd_app/scripts/bootstrap_<sandbox>_anchor.py` modeled on
    `bootstrap_fnd_csm_anchor.py` and `bootstrap_agro_erp_anchor.py`:
    - Reads from the staging dir
    - Builds AuthoritativeDatumDocument instances
@@ -126,18 +126,18 @@ compatibility for the `lv./stl./cptr.` migration. Two phases:
   date. After the cutover:
   - The `legacy_alias` column is dropped from the `documents` table
   - Dual-lookup paths (`WHERE document_id = ? OR legacy_alias = ?`) are
-    removed from `MyCiteV2/packages/adapters/sql/datum_store.py`
+    removed from `micyte/adapters/sql/datum_store.py`
   - Test `test_no_legacy_compatibility_document_keys_remain_as_primary_ids`
     (currently `@unittest.expectedFailure`) becomes required.
 
-The migration script `MyCiteV2/scripts/drop_legacy_alias_column.py`
+The migration script `fnd_app/scripts/drop_legacy_alias_column.py`
 performs the schema change. It refuses to run if any row in
 `datum_*_semantics` still uses a legacy `sandbox:` or `system:` form
 document_id as primary key. As of 2026-05-17 the preconditions are
 already satisfied — see `evidence/mos_authority_drift_audit_2026-05-17/`.
 On 2026-06-05 the operator runs::
 
-    python -m MyCiteV2.scripts.drop_legacy_alias_column \
+    python -m fnd_app.scripts.drop_legacy_alias_column \
         --authority-db <authority-db>.sqlite3
 
 The script is idempotent (subsequent runs return

@@ -2,7 +2,7 @@
 
 Authority: [../../../../docs/plans/v2-authority_stack.md](../../../../docs/plans/v2-authority_stack.md)
 
-`packages/ports/audit_log/` owns the MVP audit-log seam only.
+`micyte/ports/audit_log/` owns the MVP audit-log seam only.
 
 Implemented in this phase:
 

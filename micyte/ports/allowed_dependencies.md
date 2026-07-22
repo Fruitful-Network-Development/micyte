@@ -1,5 +1,5 @@
 # Allowed Dependencies
 
-- `packages/core/`
+- `micyte/core/`
 - `packages/modules/`
-- `packages/state_machine/` only for explicit surface contracts
+- `micyte/state_machine/` only for explicit surface contracts

@@ -1,3 +1,3 @@
 # Allowed Dependencies
 
-- `packages/core/`
+- `micyte/core/`

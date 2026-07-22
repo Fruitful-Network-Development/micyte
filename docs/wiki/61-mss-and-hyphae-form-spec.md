@@ -81,7 +81,7 @@ existing SHA-256 identity is preserved as the document version hash.
 
 ### 1. The thing named "MSS" is a JSON identity hash, not a binary sequence
 
-`MyCiteV2/packages/core/mss/datum_identity.py:101` — `compute_mss_hash`
+`micyte/core/mss/datum_identity.py:101` — `compute_mss_hash`
 builds a `payload` dict of `policy: "mos.mss_sha256_v1"`, `source_kind`,
 `document_metadata`, and a list of `{"datum_address", "raw"}` rows **sorted by
 parsed address** (`datum_identity.py:116`), then returns
@@ -96,7 +96,7 @@ self-describing binary sequence.
 
 ### 2. Hyphae today is a graph-closure derivation, with no focus exclusion
 
-`MyCiteV2/packages/core/mss/datum_identity.py:126` — `derive_hyphae_chain`
+`micyte/core/mss/datum_identity.py:126` — `derive_hyphae_chain`
 walks the transitive dependency closure of a `datum_address`
 (`datum_identity.py:153` `_walk`), collects every reachable rudi address
 (`layer=0, value_group=0`; `datum_identity.py:163`), and returns the rudi
@@ -106,7 +106,7 @@ does **not** take a focus set and does **not** exclude any datums on the basis
 of focus (docstring, `datum_identity.py:130`).
 
 The production engine is the richer
-`MyCiteV2/packages/adapters/sql/datum_semantics.py:209` —
+`micyte/adapters/sql/datum_semantics.py:209` —
 `build_document_semantics`, which per row computes a `semantic_hash`
 (`datum_semantics.py:226` `semantic_hash_for`, policy
 `HYPHAE_CHAIN_POLICY = "mos.hyphae_chain_v1"`, `:15`), a `hyphae_hash`, and a
@@ -114,8 +114,8 @@ The production engine is the richer
 `build_document_version_identity` (`datum_semantics.py:136`) reproduces the
 same `mos.mss_sha256_v1` `version_hash` as `compute_mss_hash`. These hyphae
 results are persisted per row in the `datum_row_semantics` table as
-`hyphae_chain_json` (`MyCiteV2/packages/adapters/sql/_sqlite.py:76`; written at
-`MyCiteV2/packages/adapters/sql/datum_store.py:423`, read back at
+`hyphae_chain_json` (`micyte/adapters/sql/_sqlite.py:76`; written at
+`micyte/adapters/sql/datum_store.py:423`, read back at
 `datum_store.py:822`). None of this path consumes a focus argument.
 
 > Note the layering inversion: this engine lives in the SQL adapter, not in
@@ -124,7 +124,7 @@ results are persisted per row in the `datum_row_semantics` table as
 
 ### 3. SAMRAS is the actual address-size / bitmap / start-stop-slice bitstream
 
-`MyCiteV2/packages/core/structures/samras/codec.py` is the real
+`micyte/core/structures/samras/codec.py` is the real
 single-sequence binary codec the vision describes:
 
 - An **address-size header** encoded as a unary width field
@@ -141,11 +141,11 @@ single-sequence binary codec the vision describes:
   (`codec.py:141`) round-trips a `[01]+` string back to a `SamrasStructure`
   and *rejects non-canonical* encodings (`codec.py:179`).
 - The decoded shape is `SamrasStructure`
-  (`MyCiteV2/packages/core/structures/samras/structure.py:48`), carrying
+  (`micyte/core/structures/samras/structure.py:48`), carrying
   `bitstream`, `address_width_bits`, `stop_addresses`, `value_tokens`,
   `values`, and the derived `addresses`.
 - Validation / address derivation:
-  `MyCiteV2/packages/core/structures/samras/validation.py:33`
+  `micyte/core/structures/samras/validation.py:33`
   (`derive_addresses_from_child_counts`, a breadth-first child-count walk).
 
 What SAMRAS does **not** do today: it encodes exactly **one** root tree
@@ -156,7 +156,7 @@ the closest analog is the stop-address slice table, not a presence bitmap.
 
 ### 4. The save title is `lv./stl./cptr.`, hash over the "MSS form"
 
-`MyCiteV2/packages/core/document_naming/__init__.py:19` —
+`micyte/core/document_naming/__init__.py:19` —
 `ALLOWED_PREFIXES = ("lv", "stl", "cptr")`. Grammar (`:21`–`:22`):
 
 - `lv.<msn_id>.<sandbox>.<name>.<hash>` (sandboxed live document)
@@ -249,7 +249,7 @@ are set" rather than "a JSON chain." The rudi-prefix densification
 `root_count` ≥ 1 plus the presence bitmap let a single MSS sequence frame N
 independent top-level datums. Each root is laid out in canonical address order
 (layer/value_group/iteration, matching `canonicalize_iteration_addresses`,
-`MyCiteV2/packages/core/mss/canonicalization.py:50`), its structural magnitudes
+`micyte/core/mss/canonicalization.py:50`), its structural magnitudes
 encoded SAMRAS-style, and its `raw` row content carried in the value-token
 stream. This is the property that distinguishes MSS from plain SAMRAS, which is
 single-root by construction (`SamrasStructure.root_ref`, `structure.py:50`).
