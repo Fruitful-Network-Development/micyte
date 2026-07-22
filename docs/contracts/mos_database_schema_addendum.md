@@ -42,8 +42,8 @@ CREATE INDEX        idx_documents_sandbox ON documents (tenant_id, sandbox) WHER
 ```
 
 Naming validation regex (enforced at the SQL adapter boundary by
-`MyCiteV2/packages/adapters/sql/datum_store.py` via the
-`MyCiteV2/packages/core/document_naming` library):
+`micyte/adapters/sql/datum_store.py` via the
+`micyte/core/document_naming` library):
 
 ```
 ^lv\.[^.]+\.[^.]+\.[^.]+\.[a-f0-9]{64}$
@@ -76,7 +76,7 @@ See `datum_document_naming_taxonomy.md` for the full naming contract.
 The 2026-05-03 audit proposed a `samras_namespaces` table to track multiple
 SAMRAS address spaces per anchor. This is **withdrawn**: SAMRAS is a structural
 abstraction over a datum file's row content, not a relational entity. The
-authoritative implementation lives in `MyCiteV2/packages/core/samras/`
+authoritative implementation lives in `micyte/core/samras/`
 (magnitude decode, ordinal address derivation, structure validity, mutation /
 canonical bitstream regeneration). Per-document SAMRAS state, when materialized,
 remains as a row inside the document itself (e.g. the `1-1-2` `msn` SAMRAS
@@ -94,14 +94,14 @@ deferred to `TASK-MOS-RUIGI-SAMRAS-2026-05-03`.
 The proposed `datum_hyphae_chains` table is **withdrawn**. The chain remains
 serialized as JSON in the existing `datum_row_semantics.hyphae_chain_json`
 column. Derivation is performed by
-`MyCiteV2/packages/core/mss/datum_identity.py::derive_hyphae_chain`. Storing the
+`micyte/core/mss/datum_identity.py::derive_hyphae_chain`. Storing the
 chain as JSON inside the row keeps a row's hyphae value co-located with its
 identity hash and avoids a join-table that has no readers.
 
 ## §5 — `document_staging_map` — **withdrawn**
 
 The proposed `document_staging_map` table is **withdrawn**. The migration
-script `MyCiteV2/scripts/migrate_to_canonical_document_ids.py` is idempotent and
+script `fnd_app/scripts/migrate_to_canonical_document_ids.py` is idempotent and
 records the legacy → canonical mapping directly on the `documents` row via the
 `legacy_alias` column. There is no longer a need for a separate staging map.
 
@@ -112,8 +112,8 @@ binary payload / cached source / sandbox source) and absorbs every other concern
 either:
 
 - into the row itself (`hyphae_chain_json` on `datum_row_semantics`), or
-- into a pure-stdlib core library (`packages/core/samras`, `packages/core/hops`,
-  `packages/core/datum_editing`, `packages/core/mss`, `packages/core/document_naming`).
+- into a pure-stdlib core library (`micyte/core/samras`, `micyte/core/hops`,
+  `micyte/core/datum_editing`, `micyte/core/mss`, `micyte/core/document_naming`).
 
 This keeps the relational surface narrow (one canonical-name table plus the existing
 row-semantics tables) while the algorithmic mass — bullet-proof datum editing,

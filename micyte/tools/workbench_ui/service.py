@@ -136,6 +136,60 @@ def _document_display_name(document: AuthoritativeDatumDocument) -> str:
     return _short_document_name(getattr(document, "document_name", "")) or _as_text(document.document_id)
 
 
+# Datum-KIND classification → the standardized displayer BODY a document should
+# dispatch to. The workbench editor reads this signal to auto-select a kind-aware
+# summary (contact card / record table / …) instead of always rendering the raw
+# datum grid. Conservative by design: any identity that matches no known pattern
+# resolves to "document" (the raw grid), so a new kind is added by EXTENDING the
+# pattern table, never by loosening the default.
+_DATUM_KIND_DOCUMENT = "document"
+
+# Ordered (first match wins): stronger structural identities before weaker ones.
+# Each (kind, tokens) selects `kind` when any token is a case-insensitive
+# substring of the canonical/document name. Tokens are grounded in the live fnd
+# corpus — registrar/registry cards, trapp invoices/contracts, taxonomy `txa`,
+# `*_profiles` — with a few forward-looking geo tokens (no geo docs exist yet).
+# Note the deliberate contact/contract split: the record token is "contract"
+# (with the r), and the card tokens require the hyphen/underscore ("contact-card"
+# / "contact_card"), so a plural "contacts" TABLE never misfires as a card.
+_DATUM_KIND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("tree", ("txa", "taxonomy", "dendrogram")),
+    ("record", ("invoice", "ledger", "contract", "receipt", "statement")),
+    ("geo_map", ("geospatial", "coordinate", "parcel", "cts_gis", "ruigi", "geo_", "_geo", "land")),
+    ("contact_card", ("contact-card", "contact_card", "registry", "registrar")),
+    ("profile", ("profile",)),
+)
+
+
+def _classify_datum_kind(
+    document_name: object,
+    source_kind: object,
+    canonical_name: object,
+) -> str:
+    """Map a document's identity to its standardized displayer-body KIND.
+
+    Pure, conservative helper returning one of
+    ``contact_card | profile | record | geo_map | tree | document``. It is the
+    single datum-KIND signal the workbench editor uses to auto-dispatch to a
+    kind-aware summary body; it never reads or mutates the store.
+
+    ``source_kind`` carries only ``sandbox_source`` | ``system_anthology`` in
+    the corpus, so it is not a kind descriptor — identity comes from the
+    canonical/document name. The tenant system-anthology INDEX is never a
+    displayable artifact, so it short-circuits to ``document``. Any name that
+    matches no known identity pattern also resolves to ``document`` (raw grid).
+    """
+    if _as_text(source_kind).lower() == "system_anthology":
+        return _DATUM_KIND_DOCUMENT
+    haystack = f"{_as_text(canonical_name).lower()} {_as_text(document_name).lower()}"
+    if not haystack.strip():
+        return _DATUM_KIND_DOCUMENT
+    for kind, tokens in _DATUM_KIND_PATTERNS:
+        if any(token in haystack for token in tokens):
+            return kind
+    return _DATUM_KIND_DOCUMENT
+
+
 def _truncate_text(value: object, *, limit: int = 96) -> str:
     token = _as_text(value)
     if len(token) <= limit:
@@ -911,6 +965,13 @@ class WorkbenchUiReadService:
             "document_id": selected_document_id,
             "document_name": _as_text((active_document_row or {}).get("document_name")),
             "source_kind": _as_text((active_document_row or {}).get("source_kind")),
+            # Datum-KIND dispatch signal (additive): lets the editor auto-select a
+            # standardized displayer body instead of always showing the raw grid.
+            "datum_kind": _classify_datum_kind(
+                _as_text((active_document_row or {}).get("document_name")),
+                _as_text((active_document_row or {}).get("source_kind")),
+                _as_text((active_document_row or {}).get("canonical_name")),
+            ),
             "version_hash": document_version_hash,
             "version_hash_short": document_version_hash_short,
             "row_count": int((active_document_row or {}).get("row_count") or 0),

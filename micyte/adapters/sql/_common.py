@@ -7,7 +7,7 @@ MOS adapter (removed 2026-06-08 — PayPal data is instance-file only, no MOS),
 and the retired fnd_email_deliverability MOS adapter (removed 2026-07-09 —
 deliverability is leaflet-backed now, no MOS) used to share these helpers too.
 
-This module has no MyCiteV2-side imports — pure stdlib so any adapter
+This module has no fnd_app-side imports — pure stdlib so any adapter
 can pull from it without risking a circular load.
 """
 

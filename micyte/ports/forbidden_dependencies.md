@@ -1,7 +1,7 @@
 # Forbidden Dependencies
 
 - `packages/adapters/`
-- `packages/tools/`
+- `micyte/tools/`
 - `packages/sandboxes/`
 - `instances/`
 - runtime path helpers

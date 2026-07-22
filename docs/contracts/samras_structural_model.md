@@ -81,7 +81,7 @@ The reconstructed SAMRAS note in `docs/personal_notes/SAMRAS/samras_msn_reconstr
 
 ## Authoritative Paths
 
-- `MyCiteV2/packages/core/structures/samras/codec.py`
-- `MyCiteV2/packages/core/structures/samras/structure.py`
-- `MyCiteV2/packages/core/structures/samras/validation.py`
+- `micyte/core/structures/samras/codec.py`
+- `micyte/core/structures/samras/structure.py`
+- `micyte/core/structures/samras/validation.py`
 - `docs/personal_notes/SAMRAS/shape_addressed_mixed-radix_address_space.md`

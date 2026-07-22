@@ -49,6 +49,6 @@ That reconstruction path is compatibility logic, not a replacement for keeping t
 
 ## Authoritative Paths
 
-- `MyCiteV2/packages/core/structures/samras/mutation.py`
-- `MyCiteV2/packages/core/structures/samras/workspace_adapter.py`
-- `MyCiteV2/packages/core/structures/samras/validation.py`
+- `micyte/core/structures/samras/mutation.py`
+- `micyte/core/structures/samras/workspace_adapter.py`
+- `micyte/core/structures/samras/validation.py`

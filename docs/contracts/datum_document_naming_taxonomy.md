@@ -80,7 +80,7 @@ Examples:
 - `sc.<msn>.msn-.json` → **MALFORMED** — quarantined
 
 The parser is `extract_semantic_name_from_sc_stem()` in
-`MyCiteV2/packages/core/document_naming/__init__.py`. It is the canonical,
+`micyte/core/document_naming/__init__.py`. It is the canonical,
 single-function implementation used by the migration script and any future
 materialization paths.
 
@@ -132,7 +132,7 @@ canonical prefixes: `lv.`, `stl.`, and `cptr.`.
 - Iteration values must be contiguous (no skips). A datum document with skipped
   iterations cannot be written to the database; it must be canonicalized first.
 - The hash is computed by
-  `MyCiteV2/packages/core/mss/datum_identity.py::compute_mss_hash`.
+  `micyte/core/mss/datum_identity.py::compute_mss_hash`.
 
 The MSS form of a single datum row's hyphae value (the minimal abstraction identity
 of one filament datum) is what `stl.` payloads encode; the cached source `cptr.` is
@@ -151,8 +151,8 @@ Document IDs must match:
 ```
 
 Validation is enforced at the SQL adapter boundary
-(`MyCiteV2/packages/adapters/sql/datum_store.py`) and through the
-`MyCiteV2/packages/core/document_naming` library. Writes that do not match are
+(`micyte/adapters/sql/datum_store.py`) and through the
+`micyte/core/document_naming` library. Writes that do not match are
 rejected.
 
 ## SQL Realization
@@ -164,8 +164,8 @@ nullable so that `stl.` and `cptr.` rows can omit it. Refer to
 
 The taxonomy explicitly **does not** decompose into separate tables for SAMRAS
 namespaces, HOPS geometry chains, hyphae chains, or staging-promotion maps. Those
-concerns belong to the core libraries (`packages/core/samras`, `packages/core/hops`,
-`packages/core/datum_editing`, `packages/core/mss`) and the per-row
+concerns belong to the core libraries (`micyte/core/samras`, `micyte/core/hops`,
+`micyte/core/datum_editing`, `micyte/core/mss`) and the per-row
 `hyphae_chain_json` column on `datum_row_semantics`, not to additional relational
 schemas.
 
@@ -191,7 +191,7 @@ sandbox-add procedure) is defined in
 document is the single binding source for this rule. The taxonomy below
 keeps only the naming-shape concerns.
 
-the legacy `hippo` tree is **historical evidence only**. It is not imported by MyCiteV2 at
+the legacy `hippo` tree is **historical evidence only**. It is not imported by fnd_app at
 runtime, it is not a materialization authority for MOS, and it must not influence
 document naming, sandbox token resolution, or workbench rendering decisions.
 

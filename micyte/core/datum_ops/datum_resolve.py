@@ -30,6 +30,7 @@ from typing import Any
 from micyte.core.structures.hops import decode_hops_coordinate_token
 from micyte.core.structures.samras.structure import as_text
 
+from . import field_registry as _fr
 from . import labels as _labels
 from .refs import _head, _is_definition_head
 
@@ -44,17 +45,18 @@ class Markers:
 
     NODE_ID = _labels.RF_NODE_ID      # rf.3-1-1 — txa node-id reference
     TITLE = _labels.RF_TITLE          # rf.3-1-2 — 512-bit ASCII title babelette
-    COORDINATE = "rf.3-1-3"           # HOPS lon/lat coordinate token
-    MSN = "rf.3-1-4"                  # msn-id literal
-    LCL_ID = _labels.RF_LCL_ID        # rf.3-1-5 — lcl node-id reference
-    UTC = "rf.3-1-6"                  # HOPS-UTC date token
-    NOMINAL = "rf.3-1-7"              # nominal-256-17 value (weight/cost/amount)
-    VIEW = "rf.3-1-8"                 # record-view token (ASCII): flags a node as an
-    #                                   instance-container the local_domain tool can
-    #                                   expand into a record table (product/invoice/…).
-    LCL_ID_MYC = "rf.3-1-13"          # mycelium_network lcl node-id reference (that
-    #                                   sandbox's rf.3-1-1/3-1-5 slots are coordinate/
-    #                                   identification, so the agro markers cannot double).
+    COORDINATE = _fr.marker(_fr.FARM, "coordinate")   # rf.3-1-3 — HOPS lon/lat token
+    MSN = _fr.marker(_fr.FARM, "msn_id")              # rf.3-1-4 — msn-id literal
+    LCL_ID = _labels.RF_LCL_ID                        # rf.3-1-5 — lcl node-id reference
+    UTC = _fr.marker(_fr.FARM, "utc")                 # rf.3-1-6 — HOPS-UTC date token
+    NOMINAL = _fr.marker(_fr.FARM, "nominal")         # rf.3-1-7 — nominal-256-17 value
+    VIEW = _fr.marker(_fr.FARM, "view")               # rf.3-1-8 — record-view token: flags a
+    #                                   node as an instance-container the local_domain tool
+    #                                   can expand into a record table (product/invoice/…).
+    LCL_ID_MYC = _fr.marker(_fr.REGISTRAR, "lcl_id")  # rf.3-1-13 — registrar (mycelium) lcl
+    #                                   node-id reference (that sandbox's rf.3-1-1/3-1-5
+    #                                   slots are coordinate/identification, so the agro
+    #                                   markers cannot double).
 
     # Markers whose magnitude is a node-address REFERENCE (not a literal).
     NODE_REF = frozenset({NODE_ID, LCL_ID, LCL_ID_MYC})

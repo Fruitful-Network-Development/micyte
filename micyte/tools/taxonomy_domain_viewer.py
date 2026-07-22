@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from micyte.core.datum_ops import field_registry as _fr
 from micyte.core.datum_ops.datum_resolve import decode_label, iter_marker_pairs
 from micyte.core.datum_ops.node_addrs import parent_of
 from micyte.core.instances import default_farm_sandbox
@@ -46,9 +47,9 @@ _STRUCTURE = "txa"
 _PRODUCT_DOC = "product_profiles"
 
 # New taxonomy-sandbox babelettes (extend the agro_erp txa vocab).
-_MARK_COMMON = "rf.3-1-9"    # common_name (ASCII label)
-_MARK_ICON = "rf.3-1-10"     # icon_ref (bare icon-leaflet stem)
-_MARK_TAXON = "rf.3-1-1"     # product_profiles: taxonomy_id (a txa node address)
+_MARK_COMMON = _fr.marker(_fr.TAXONOMY, "common_name")  # rf.3-1-9 — common_name (ASCII label)
+_MARK_ICON = _fr.marker(_fr.TAXONOMY, "icon_ref")       # rf.3-1-10 — icon_ref (bare icon-leaflet stem)
+_MARK_TAXON = _fr.marker(_fr.TAXONOMY, "txa_id")        # rf.3-1-1 — product_profiles taxonomy_id (txa node)
 
 _ICON_PREFIX = "/assets/icons/"
 # On-disk store of the mycite-txa CLADE icons (filename encodes the txa node

@@ -11,13 +11,17 @@ payload:
 * the ``profiles`` resource (``fnd_ag_profiles``) → point features: one per (entity ×
   ag-profile type), category-styled with the FND network legend, region-tagged from the
   ``administrative`` gazetteer labels, joined by the entity msn node;
-* the ``events`` resource (the ``calendar`` doc) → the upcoming-events list. Calendar
-  rows are ic-hops cyclical: each ``open_hours`` row carries a stamp per recurrence in
-  exactly ONE cyclical structure (hc hops ``day-hh-mm`` weekly, or qc hops
-  ``day[-hh-mm]`` seasonal/dated) plus a (time-unit, magnitude) span; ``off_season``
-  rows (qc day stamp + day span, label ``<parent>.off_season_N``) are that event's
-  closures — cadence is derived from WHICH structure the stamp is in, and windows
-  from the closure complement. Joined to hosts by msn node.
+* the ``events`` resources (the per-chronology event-log docs ``qc_log`` / ``hc_log`` /
+  ``lc_log``; legacy unified ``calendar`` docs parse identically) → the upcoming-events
+  list. Event entries are ic-hops cyclical: each ``open_hours`` entry carries a stamp
+  per recurrence in exactly ONE cyclical structure (hc hops ``day-hh-mm`` weekly, or
+  qc hops ``day[-hh-mm]`` seasonal/dated) plus a (time-unit, magnitude) span;
+  ``off_season`` entries (qc day stamp + day span, label ``<parent>.off_season_N``)
+  are that event's closures — cadence is derived from WHICH structure the stamp is in,
+  and windows from the closure complement. Because closures are qc-addressed even when
+  their parent event is weekly, the parent may live in ``hc_log`` while its closures
+  live in ``qc_log``: parsing runs over the UNION of all event docs and re-joins by
+  label. Joined to hosts by msn node.
 
 Rendered by the ``network_map`` tool renderer (filter bar + SVG map + events list).
 A manifest row with no ``rf.3-1-14`` kind is treated as ``boundary`` (back-compat with a
@@ -30,6 +34,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from micyte.core.datum_ops import field_registry as _fr
 from micyte.core.document_naming import parse_canonical_document_id
 from micyte.core.structures.hops import (
     current_open_window,
@@ -51,9 +56,15 @@ _TENANT_DEFAULT = "fnd"
 _SCHEMA = "mycite.v2.portal.workbench.tool.network_map.v1"
 SOURCE_SANDBOX = "registrar"
 MANIFEST_NAME = "network_sources"
-_COORD, _NODE, _NAME = "rf.3-1-1", "rf.3-1-2", "rf.3-1-3"
-_UTC_M, _SB, _LCL, _KIND = "rf.3-1-6", "rf.3-1-12", "rf.3-1-13", "rf.3-1-14"
-_STAMP, _SPAN = "rf.3-1-15", "rf.3-1-16"  # ic-hops cyclical stamp / tiu span magnitude
+_COORD = _fr.marker(_fr.REGISTRAR, "coordinate")       # rf.3-1-1
+_NODE = _fr.marker(_fr.REGISTRAR, "msn_id")            # rf.3-1-2
+_NAME = _fr.marker(_fr.REGISTRAR, "title")             # rf.3-1-3
+_UTC_M = _fr.marker(_fr.REGISTRAR, "utc")              # rf.3-1-6
+_SB = _fr.marker(_fr.REGISTRAR, "mss_source_binary")   # rf.3-1-12
+_LCL = _fr.marker(_fr.REGISTRAR, "lcl_id")             # rf.3-1-13
+_KIND = _fr.marker(_fr.REGISTRAR, "resource_kind")     # rf.3-1-14
+_STAMP = _fr.marker(_fr.REGISTRAR, "ic_stamp")         # rf.3-1-15 (ic-hops cyclical stamp)
+_SPAN = _fr.marker(_fr.REGISTRAR, "tiu_magnitude")     # rf.3-1-16 (tiu span magnitude)
 _KIND_OPEN_HOURS, _KIND_OFF_SEASON = "1-3-8-1", "1-3-8-2"
 
 # Entity-class colour palette (the FND brand mark). The operator's rule: a marker's
@@ -107,7 +118,9 @@ _CATEGORY_BY_LCL = (
 #     market-facing types: CSAs, farmers markets, markets (groceries), farm stands. Decided
 #     by market-facing SUBSTANCE (category / glyph), NOT entity class — an administration- or
 #     co-op-run farmers market still belongs here (its colour stays who-drives-it). Producers
-#     (farms) are NOT shown here unless they market as a farm stand (then they ARE a stand).
+#     (farms) are NOT shown here; a producer that hosts a farm-stand recurrence stays a
+#     peer NODE — the stand itself is an operation EVENT (entities are nodes; farm stands
+#     are events). Only an entity-level farmstand profile (lcl 1-2-1-4) sections here.
 #   logistic  — upstream input suppliers (seed & input suppliers).
 #   peer      — everything else: other farms (producers), organizations, administrative
 #     bodies, co-ops and informal entities (the "who" that supports operations).
@@ -117,9 +130,9 @@ _LOGISTIC_CATEGORIES = frozenset({"seed_supplier"})
 
 
 def _section_for(category: str, icon: str) -> str:
-    """The NETWORK sub-tab a profile belongs to. ``icon`` is the FINAL substance glyph
-    (evaluate after the farm-stand override) so a producer that markets as a farm stand
-    is sectioned as an operation, not a peer."""
+    """The NETWORK sub-tab a profile belongs to. ``icon`` is the substance glyph — an
+    entity-level farmstand profile (lcl 1-2-1-4 subtype) sections as an operation even
+    though its category is producer."""
     if category in _LOGISTIC_CATEGORIES:
         return "logistic"
     if category in _OPERATION_CATEGORIES or icon == "farm_stand":
@@ -269,6 +282,66 @@ def _time_range_text(hour: int, minute: int, span_minutes: int) -> str:
     return f"{hour:02d}:{minute:02d}–{end_m // 60:02d}:{end_m % 60:02d}"
 
 
+# per-chronology event-log docs (system_log family): doc name → its structure lcl leaf.
+_LOG_DOC_STRUCTURE = {"qc_log": LCL_QC, "hc_log": LCL_HC, "lc_log": "1-5-4"}
+
+
+def iter_event_log_entries(doc: Any) -> list[dict[str, Any]]:
+    """Parsed event entries of one event-log document, tolerant of both shapes:
+
+    * ``7-3-N`` entries (the per-chronology ``qc_log``/``hc_log``/``lc_log`` docs,
+      system_log-family grammar): the event class arrives as the typed pair
+      ``"6-1-1", K`` resolved through the doc's own ``4-2-K`` scaffold row → lcl
+      ``1-3-K``;
+    * legacy ``4-1-N`` calendar rows: the class is the direct non-kind ``1-3-*`` ref.
+
+    Structure prefers the entry's own ``1-5-*`` ref (rows stay self-describing when
+    copied out of their doc), falling back to the owning doc's structure by name.
+    ``event_class`` may be empty on closure entries. Reused by the micyte.com offering
+    exporter — keep it dependency-light and pure.
+    """
+    type_lcl: dict[str, str] = {}
+    for r in getattr(doc, "rows", ()) or ():
+        addr = _as_text(getattr(r, "datum_address", ""))
+        if addr.startswith("4-2-"):
+            pairs = _pairs(_row_head(r))
+            lcl = next((c for c in pairs.get(_LCL, []) if c.startswith("1-3-")), "")
+            if lcl:
+                type_lcl[addr.rsplit("-", 1)[-1]] = lcl
+    doc_structure = _LOG_DOC_STRUCTURE.get(_doc_name(doc), "")
+    entries: list[dict[str, Any]] = []
+    for r in getattr(doc, "rows", ()) or ():
+        addr = _as_text(getattr(r, "datum_address", ""))
+        if not (addr.startswith("7-3-") or addr.startswith("4-1-")):
+            continue
+        pairs = _pairs(_row_head(r))
+        node = pairs.get(_NODE, [""])[0]
+        lcls = pairs.get(_LCL, [])
+        kind_ref = pairs.get("6-1-1", [""])[0]
+        if not node or not (lcls or kind_ref):
+            continue
+        event_class = (type_lcl.get(kind_ref, f"1-3-{kind_ref}" if kind_ref else "")
+                       or next((c for c in lcls
+                                if c.startswith("1-3-") and not c.startswith("1-3-8")), ""))
+        try:
+            span = int(pairs.get(_SPAN, ["0"])[0] or 0)
+        except ValueError:
+            span = 0
+        entries.append({
+            "label": _row_label(r),
+            "node": node,
+            "event_class": event_class,
+            "event_kind": next((c for c in lcls if c.startswith("1-3-8")), ""),
+            "structure": next((c for c in lcls if c.startswith("1-5-")), "") or doc_structure,
+            "stamps": pairs.get(_STAMP, []),
+            "span": span,
+            "span_unit": next((c for c in lcls if c.startswith("1-6-")), ""),
+            "coord": pairs.get(_COORD, [""])[0],
+            "title": pairs.get(_NAME, [""])[0],
+        })
+    return entries
+
+
 def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                               now: datetime | None = None,
                               section: str | None = None) -> dict[str, Any]:
@@ -381,6 +454,7 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     features: list[dict[str, Any]] = []
     profiles: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
+    event_docs: list[Any] = []
     rendered = 0
     for res in resources:
         doc = by_name.get(res["name"])
@@ -450,132 +524,111 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                 })
         elif res["kind"] == "events":
             rendered += 1
-            today = now.date()
-            # pass 1 — parse every calendar row; off_season rows become their
-            # parent event's closure runs (qc day stamp + day-unit span)
-            open_rows: list[dict[str, Any]] = []
-            closures_by_parent: dict[str, list[tuple[int, int]]] = {}
-            for r in getattr(doc, "rows", ()) or ():
-                if not _as_text(getattr(r, "datum_address", "")).startswith("4-1-"):
+            event_docs.append(doc)
+
+    # events: parsed AFTER the resource loop over the UNION of all event-log docs
+    # (qc_log / hc_log / lc_log — legacy `calendar` parses identically). Closures are
+    # qc-addressed even when their parent event is weekly (hc), so the parent may live
+    # in hc_log while its closures live in qc_log — pass 1 must see every doc before
+    # pass 2 re-joins them by label.
+    today = now.date()
+    # pass 1 — parse every event entry; off_season entries become their
+    # parent event's closure runs (qc day stamp + day-unit span)
+    open_rows: list[dict[str, Any]] = []
+    closures_by_parent: dict[str, list[tuple[int, int]]] = {}
+    for doc in event_docs:
+        for entry in iter_event_log_entries(doc):
+            if entry["event_kind"] == _KIND_OFF_SEASON:
+                if not entry["stamps"]:
                     continue
-                pairs = _pairs(_row_head(r))
-                node = pairs.get(_NODE, [""])[0]
-                lcls = pairs.get(_LCL, [])
-                stamps = pairs.get(_STAMP, [])
-                if not node or not lcls:
-                    continue
-                kind = next((c for c in lcls if c.startswith("1-3-8")), "")
                 try:
-                    span = int(pairs.get(_SPAN, ["0"])[0] or 0)
+                    day, _h, _m = parse_ic_stamp(entry["stamps"][0], structure=LCL_QC)
                 except ValueError:
-                    span = 0
-                label = _row_label(r)
-                if kind == _KIND_OFF_SEASON:
-                    if not stamps:
-                        continue
-                    try:
-                        day, _h, _m = parse_ic_stamp(stamps[0], structure=LCL_QC)
-                    except ValueError:
-                        continue
-                    parent = label.rsplit(".off_season", 1)[0]
-                    closures_by_parent.setdefault(parent, []).append((day, max(1, span)))
                     continue
-                open_rows.append({
-                    "pairs": pairs, "label": label, "node": node, "span": span,
-                    "op_class": next((c for c in lcls
-                                      if c.startswith("1-3-") and not c.startswith("1-3-8")), ""),
-                    "structure": next((c for c in lcls if c.startswith("1-5-")), ""),
-                    "stamps": stamps,
-                })
-            # pass 2 — cadence, window, time range and occurrences derive from
-            # the stamp's STRUCTURE (hc = weekly, qc = seasonal/dated)
-            for item in open_rows:
-                pairs, node = item["pairs"], item["node"]
-                closures = closures_by_parent.get(item["label"], [])
-                if item["structure"] == LCL_HC and item["stamps"]:
-                    hc_days: list[int] = []
-                    hh = mm = 0
-                    try:
-                        for s in item["stamps"]:
-                            d, hh, mm = parse_ic_stamp(s, structure=LCL_HC)
-                            hc_days.append(d)
-                    except ValueError:
-                        continue
-                    if closures:
-                        win_start, win_end = current_open_window(closures, now=today)
-                    else:  # open all cycle: present the current calendar year
-                        win_start = date(today.year, 1, 1)
-                        win_end = date(today.year, 12, 31)
-                    cadence_nodes = (["1-4-3"] if len(set(hc_days)) == 7
-                                     else [f"1-4-1-{d}" for d in sorted(set(hc_days))])
-                    occurrences = [d.isoformat() for d in
-                                   next_hc_occurrences(hc_days, closures, now=today)]
-                    time_range = _time_range_text(hh, mm, item["span"])
-                    # weekly-view geometry: JS weekday (Sun=0) + minute-of-day window.
-                    weekdays = sorted({d % 7 for d in hc_days})  # hc day 1 = Monday → js 1
-                    start_min = hh * 60 + mm
-                    end_min = min(start_min + max(0, int(item["span"])), 24 * 60 - 1)
-                elif item["structure"] == LCL_QC and item["stamps"]:
-                    try:
-                        day, _h, _m = parse_ic_stamp(item["stamps"][0], structure=LCL_QC)
-                    except ValueError:
-                        continue
-                    win_start = date_of_qc_day(day, cycle_start_year=cycle_start_year_of(today))
-                    win_end = win_start + timedelta(days=max(1, item["span"]) - 1)
-                    cadence_nodes = ["1-4-2"]
-                    occurrences = ([max(today, win_start).isoformat()]
-                                   if today <= win_end else [])
-                    time_range = "00:00–23:59"
-                    weekdays, start_min, end_min = [], 0, 24 * 60 - 1  # all-day, in season
-                else:
-                    continue  # lc hops reserved; malformed rows degrade silently
-                event_class = item["op_class"]
-                lonlat = _lonlat(pairs.get(_COORD, [""])[0])
-                host_cls = color_class(node, item["label"])
-                host_style = ENTITY_CLASS_STYLES.get(host_cls, ENTITY_CLASS_STYLES["legal"])
-                events.append({
-                    "label": item["label"],
-                    "title": pairs.get(_NAME, [item["label"]])[0],
-                    "host_node": node,
-                    "host_name": entity_name.get(node, ""),
-                    "host_category": host_cls,
-                    "host_category_label": host_style["label"],
-                    "color": host_style["color"],
-                    "icon": EVENT_CLASS_ICON.get(event_class, "ticket"),
-                    "event_group": EVENT_CLASS_GROUP.get(event_class, "other"),
-                    "event_class": event_class,
-                    "event_class_label": lcl_label.get(event_class, event_class),
-                    "cadence": [lcl_label.get(c, c) for c in cadence_nodes],
-                    "window": {"start": win_start.isoformat(), "end": win_end.isoformat()},
-                    "time_range": time_range,
-                    "weekdays": weekdays,        # JS weekday ints (Sun=0); [] = all-day/seasonal
-                    "start_min": start_min,      # minute-of-day window for the week grid
-                    "end_min": end_min,
-                    "venue": list(lonlat) if lonlat else None,
-                    "next_occurrences": occurrences,
-                })
+                parent = entry["label"].rsplit(".off_season", 1)[0]
+                closures_by_parent.setdefault(parent, []).append((day, max(1, entry["span"])))
+                continue
+            open_rows.append(entry)
+    # pass 2 — cadence, window, time range and occurrences derive from
+    # the stamp's STRUCTURE (hc = weekly, qc = seasonal/dated)
+    for item in open_rows:
+        node = item["node"]
+        closures = closures_by_parent.get(item["label"], [])
+        if item["structure"] == LCL_HC and item["stamps"]:
+            hc_days: list[int] = []
+            hh = mm = 0
+            try:
+                for s in item["stamps"]:
+                    d, hh, mm = parse_ic_stamp(s, structure=LCL_HC)
+                    hc_days.append(d)
+            except ValueError:
+                continue
+            if closures:
+                win_start, win_end = current_open_window(closures, now=today)
+            else:  # open all cycle: present the current calendar year
+                win_start = date(today.year, 1, 1)
+                win_end = date(today.year, 12, 31)
+            cadence_nodes = (["1-4-3"] if len(set(hc_days)) == 7
+                             else [f"1-4-1-{d}" for d in sorted(set(hc_days))])
+            occurrences = [d.isoformat() for d in
+                           next_hc_occurrences(hc_days, closures, now=today)]
+            time_range = _time_range_text(hh, mm, item["span"])
+            # weekly-view geometry: JS weekday (Sun=0) + minute-of-day window.
+            weekdays = sorted({d % 7 for d in hc_days})  # hc day 1 = Monday → js 1
+            start_min = hh * 60 + mm
+            end_min = min(start_min + max(0, int(item["span"])), 24 * 60 - 1)
+        elif item["structure"] == LCL_QC and item["stamps"]:
+            try:
+                day, _h, _m = parse_ic_stamp(item["stamps"][0], structure=LCL_QC)
+            except ValueError:
+                continue
+            win_start = date_of_qc_day(day, cycle_start_year=cycle_start_year_of(today))
+            win_end = win_start + timedelta(days=max(1, item["span"]) - 1)
+            cadence_nodes = ["1-4-2"]
+            occurrences = ([max(today, win_start).isoformat()]
+                           if today <= win_end else [])
+            time_range = "00:00–23:59"
+            weekdays, start_min, end_min = [], 0, 24 * 60 - 1  # all-day, in season
+        else:
+            continue  # lc hops reserved; malformed rows degrade silently
+        event_class = item["event_class"]
+        lonlat = _lonlat(item["coord"])
+        host_cls = color_class(node, item["label"])
+        host_style = ENTITY_CLASS_STYLES.get(host_cls, ENTITY_CLASS_STYLES["legal"])
+        events.append({
+            "label": item["label"],
+            "title": item["title"] or item["label"],
+            "host_node": node,
+            "host_name": entity_name.get(node, ""),
+            "host_category": host_cls,
+            "host_category_label": host_style["label"],
+            "color": host_style["color"],
+            "icon": EVENT_CLASS_ICON.get(event_class, "ticket"),
+            "event_group": EVENT_CLASS_GROUP.get(event_class, "other"),
+            "event_class": event_class,
+            "event_class_label": lcl_label.get(event_class, event_class),
+            "cadence": [lcl_label.get(c, c) for c in cadence_nodes],
+            "window": {"start": win_start.isoformat(), "end": win_end.isoformat()},
+            "time_range": time_range,
+            "weekdays": weekdays,        # JS weekday ints (Sun=0); [] = all-day/seasonal
+            "start_min": start_min,      # minute-of-day window for the week grid
+            "end_min": end_min,
+            "venue": list(lonlat) if lonlat else None,
+            "next_occurrences": occurrences,
+        })
     events.sort(key=lambda e: (not e["next_occurrences"],
                                e["next_occurrences"][0] if e["next_occurrences"] else "9999",
                                e["title"]))
 
-    # Farm-stand override: a producer whose location also hosts a farm_stand_hours
-    # (1-3-3) recurrence markets AS a farm stand → swap its farm glyph for the stand.
-    stand_hosts = {e["host_node"] for e in events if e["event_class"] == "1-3-3"}
-    for p in profiles:
-        if p["msn_node"] in stand_hosts and p["icon"] in {"farm", "orchard", "vineyard", "apiary"}:
-            p["icon"] = "farm_stand"
+    # NB: no farm-stand override here any more. Doctrine: entities are nodes; farm stands
+    # are EVENTS. A producer that hosts a 1-3-3 recurrence stays a producer node (farm
+    # glyph, peer section) — the farm-stand fact is carried by the event. Entity-LEVEL
+    # farmstand profiles (lcl 1-2-1-4 subtype) still glyph/section as farm stands via
+    # _substance_for_profile + _section_for.
 
-    # A location that markets AS a farm stand is a farm-stand TYPE, not a producer — so the
-    # Operation TYPE facet reads "Farm stand", never "Producer" (producers' farms are not on
-    # the operation map at all). Category follows the FINAL farm_stand glyph.
-    for p in profiles:
-        if p["icon"] == "farm_stand":
-            p["category"] = "farm_stand"
-            p["category_label"] = _CATEGORY_LABEL["farm_stand"]
-
-    # NETWORK sub-tab sectioning: tag each profile (after the farm-stand override so the
-    # icon is final) and each event, then filter to the requested section. Facets + widgets
-    # below are computed from the filtered lists, so each sub-tab's counts are self-consistent.
+    # NETWORK sub-tab sectioning: tag each profile and each event, then filter to the
+    # requested section. Facets + widgets below are computed from the filtered lists,
+    # so each sub-tab's counts are self-consistent.
     for p in profiles:
         p["section"] = _section_for(p["category"], p["icon"])
     for e in events:

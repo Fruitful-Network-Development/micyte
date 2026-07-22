@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from micyte.core.datum_ops import field_registry as _fr
 from micyte.core.structures.hops import decode_hops_coordinate_token
 from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
@@ -38,8 +39,8 @@ _TENANT_DEFAULT = "fnd"
 # rf.3-1-1 the HOPS coordinate.
 _REGISTRAR = "registrar"
 _REG_PROFILES = "fnd_ag_profiles"
-_REG_MSN = "rf.3-1-2"
-_REG_COORD = "rf.3-1-1"
+_REG_MSN = _fr.marker(_fr.REGISTRAR, "msn_id")        # rf.3-1-2 — entity msn node
+_REG_COORD = _fr.marker(_fr.REGISTRAR, "coordinate")  # rf.3-1-1 — HOPS coordinate
 # The frame an empty farm opens on, in metres across — big enough to place a field inside.
 _BOOTSTRAP_SPAN_M = 600.0
 

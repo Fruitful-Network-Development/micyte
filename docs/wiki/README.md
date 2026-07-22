@@ -27,7 +27,7 @@ Current pages:
 - `docs/plans/` is execution and backlog
 - `docs/audits/` is evidence and review
 - `docs/personal_notes/` is preserved source material
-- `MyCiteV2/**/README.md` and related package docs are code-adjacent bounded-scope docs
+- `fnd_app/**/README.md` and related package docs are code-adjacent bounded-scope docs
 
 If a wiki page starts making normative claims, promote that content into a
 contract and leave the wiki page as orientation and cross-reference.

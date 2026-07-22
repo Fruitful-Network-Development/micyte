@@ -22,7 +22,7 @@ If you are orienting to the repo for the first time, read:
 This repo uses a few documentation families on purpose:
 
 - code-adjacent package docs:
-  `MyCiteV2/**/README.md`, `module_contract.md`, `allowed_dependencies.md`,
+  `fnd_app/**/README.md`, `module_contract.md`, `allowed_dependencies.md`,
   `forbidden_dependencies.md`, `testing_strategy.md`
 - canonical cross-cutting contracts:
   [`docs/contracts/`](contracts/)

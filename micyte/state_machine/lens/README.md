@@ -2,7 +2,7 @@
 
 Authority: stateless codec layer used at the staging boundary.
 
-`packages/state_machine/lens/` defines display/canonical transforms that are intentionally separate from mutation decision logic.
+`micyte/state_machine/lens/` defines display/canonical transforms that are intentionally separate from mutation decision logic.
 
 ## Contract
 

@@ -1,5 +1,5 @@
 # Allowed Dependencies
 
-- `packages/core/`
-- narrow shared types from `packages/state_machine/`
-- `packages/ports/` contracts when explicitly required
+- `micyte/core/`
+- narrow shared types from `micyte/state_machine/`
+- `micyte/ports/` contracts when explicitly required

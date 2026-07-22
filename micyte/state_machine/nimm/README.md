@@ -2,7 +2,7 @@
 
 Authority: [../../../../docs/plans/v2-authority_stack.md](../../../../docs/plans/v2-authority_stack.md)
 
-`packages/state_machine/nimm/` owns the directive schema and mutation contract foundation.
+`micyte/state_machine/nimm/` owns the directive schema and mutation contract foundation.
 
 Implemented:
 

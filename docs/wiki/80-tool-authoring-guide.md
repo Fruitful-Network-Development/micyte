@@ -29,23 +29,23 @@ payload* the JS renderer paints into the workbench visualization panel.
 
 | Concern | Path |
 |---|---|
-| Tool contract (protocol) | `MyCiteV2/packages/tools/_contract.py` |
-| Tool registry | `MyCiteV2/packages/tools/_registry.py` |
-| Package import wiring | `MyCiteV2/packages/tools/__init__.py` |
-| Worked-example tool (palette entry) | `MyCiteV2/packages/tools/workbench_ui_view.py` |
-| Worked-example read service | `MyCiteV2/packages/tools/workbench_ui/service.py` |
-| Second example (content-resolving) | `MyCiteV2/packages/tools/product_document_view.py` |
-| Shell registry entry (palette target) | `MyCiteV2/packages/state_machine/portal_shell/shell_registry.py` |
-| `PortalToolRegistryEntry` dataclass | `MyCiteV2/packages/state_machine/portal_shell/shell.py` |
-| Eligibility recognizer (pure) | `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py` |
-| Palette runtime | `MyCiteV2/instances/_shared/runtime/portal_palette_runtime.py` |
-| Eligible-tools HTTP endpoint | `MyCiteV2/instances/_shared/portal_host/app.py` |
-| Palette front-end | `MyCiteV2/instances/_shared/portal_host/static/v2_portal_tool_palette.js` |
+| Tool contract (protocol) | `micyte/tools/_contract.py` |
+| Tool registry | `micyte/tools/_registry.py` |
+| Package import wiring | `micyte/tools/__init__.py` |
+| Worked-example tool (palette entry) | `micyte/tools/workbench_ui_view.py` |
+| Worked-example read service | `micyte/tools/workbench_ui/service.py` |
+| Second example (content-resolving) | `micyte/tools/product_document_view.py` |
+| Shell registry entry (palette target) | `micyte/state_machine/portal_shell/shell_registry.py` |
+| `PortalToolRegistryEntry` dataclass | `micyte/state_machine/portal_shell/shell.py` |
+| Eligibility recognizer (pure) | `micyte/state_machine/portal_shell/tool_eligibility.py` |
+| Palette runtime | `fnd_app/instances/_shared/runtime/portal_palette_runtime.py` |
+| Eligible-tools HTTP endpoint | `fnd_app/instances/_shared/portal_host/app.py` |
+| Palette front-end | `fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js` |
 
 ### The contract
 
 Every tool is a Python object that satisfies the `WorkbenchTool` `Protocol`
-defined in `MyCiteV2/packages/tools/_contract.py:20`. It is intentionally
+defined in `micyte/tools/_contract.py:20`. It is intentionally
 minimal — a handful of identifying attributes and one method
 (`_contract.py:30`):
 
@@ -90,9 +90,9 @@ eligibility dicts.
 
 ### 1. Implement the `WorkbenchTool` contract
 
-Create `MyCiteV2/packages/tools/<your_tool_id>.py` with a class that carries the
+Create `micyte/tools/<your_tool_id>.py` with a class that carries the
 five attributes and `build_panel_payload`. Model it on
-`MyCiteV2/packages/tools/workbench_ui_view.py:30`:
+`micyte/tools/workbench_ui_view.py:30`:
 
 ```python
 from __future__ import annotations
@@ -100,7 +100,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from MyCiteV2.packages.state_machine.portal_shell.shell_schemas import (
+from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
@@ -138,9 +138,9 @@ Notes drawn from the real tools:
   (`workbench_ui_view.py:47`) returns only a schema marker, because that tool
   *navigates to its own surface* rather than rendering in the panel — its heavy
   document/grid/overlay rendering lives in the read service
-  `MyCiteV2/packages/tools/workbench_ui/service.py:468`
+  `micyte/tools/workbench_ui/service.py:468`
   (`WorkbenchUiReadService.read_surface`, `service.py:586`).
-- `MyCiteV2/packages/tools/product_document_view.py:130`
+- `micyte/tools/product_document_view.py:130`
   (`ProductDocumentViewer`) is the opposite pattern: its `build_panel_payload`
   (`product_document_view.py:144`) reads the sandbox's documents and resolves a
   full product table *inside* the payload. Use this pattern when your tool
@@ -161,8 +161,8 @@ register(MyTool())
 ```
 
 Second, import your module from the package `__init__` so the registry is
-populated whenever a consumer imports `MyCiteV2.packages.tools`. Add it to the
-side-effect import block in `MyCiteV2/packages/tools/__init__.py` (alongside
+populated whenever a consumer imports `micyte.tools`. Add it to the
+side-effect import block in `micyte/tools/__init__.py` (alongside
 `workbench_ui_view`, `product_document_view`, `cts_gis_*`):
 
 ```python
@@ -212,7 +212,7 @@ The viz registry above is what the *menu-bar search* consults. To also be a
 first-class **palette target** (with a surface, capabilities, and read/write
 posture), add a `PortalToolRegistryEntry` to the tuple returned by
 `build_portal_tool_registry_entries()` in
-`MyCiteV2/packages/state_machine/portal_shell/shell_registry.py:141`. Model it on
+`micyte/state_machine/portal_shell/shell_registry.py:141`. Model it on
 the `workbench_ui` entry (`shell_registry.py:165`):
 
 ```python
@@ -234,7 +234,7 @@ PortalToolRegistryEntry(
 ```
 
 The dataclass is defined in
-`MyCiteV2/packages/state_machine/portal_shell/shell.py:477`; its
+`micyte/state_machine/portal_shell/shell.py:477`; its
 `applies_to_archetype` / `applies_to_source_kind` fields are at
 `shell.py:490`. Its `__post_init__` enforces the contract (`shell.py:502`):
 `surface_posture` **must** be `SURFACE_POSTURE_PALETTE_TARGET`,
@@ -258,13 +258,13 @@ The palette runtime `build_eligible_tools_response(...)`
 filters with `_viz_tool_matches` (`portal_palette_runtime.py:59`), and returns
 `{schema, tools: [{tool_id, label, summary, route}, ...]}`. The Flask endpoint is
 `GET /portal/api/tools/eligible` at
-`MyCiteV2/instances/_shared/portal_host/app.py:1707`.
+`fnd_app/instances/_shared/portal_host/app.py:1707`.
 
 Quick checks:
 
 ```python
 # With no document context, every registered tool is returned (welcome screen).
-from MyCiteV2.instances._shared.runtime.portal_palette_runtime import (
+from fnd_app.instances._shared.runtime.portal_palette_runtime import (
     build_eligible_tools_response,
 )
 out = build_eligible_tools_response(
@@ -308,7 +308,7 @@ matches it.
 trace from registration to render:
 
 1. **Contract object** —
-   `MyCiteV2/packages/tools/workbench_ui_view.py:30` defines `WorkbenchUiTool`
+   `micyte/tools/workbench_ui_view.py:30` defines `WorkbenchUiTool`
    with `tool_id="workbench_ui"`, `route=WORKBENCH_UI_TOOL_ROUTE`, and
    `applies_to_source_kind=("sandbox_source", "system_anthology")`
    (`workbench_ui_view.py:45`).
@@ -317,13 +317,13 @@ trace from registration to render:
    surface* rather than painting into the panel.
 3. **Self-register** — `register(WorkbenchUiTool())` at
    `workbench_ui_view.py:71`, and the module is imported from
-   `MyCiteV2/packages/tools/__init__.py` so the registry is populated on import.
+   `micyte/tools/__init__.py` so the registry is populated on import.
 4. **Surface rendering** — the actual two-pane document table + datum grid +
    directive overlay is produced by `WorkbenchUiReadService`
-   (`MyCiteV2/packages/tools/workbench_ui/service.py:468`); its `read_surface`
+   (`micyte/tools/workbench_ui/service.py:468`); its `read_surface`
    (`service.py:586`) reads the authoritative catalog, projects rows, resolves
    lenses, and emits `interface_panel_sections` + a `surface_payload`. (Scope
-   notes live in `MyCiteV2/packages/tools/workbench_ui/README.md`.)
+   notes live in `micyte/tools/workbench_ui/README.md`.)
 5. **Palette target** — the matching `PortalToolRegistryEntry`
    (`shell_registry.py:165`) declares it `read-only`,
    `default_workbench_visible=True`, and `applies_to_source_kind=("sandbox_source",
@@ -346,7 +346,7 @@ contract, different `build_panel_payload` strategy.
   Utilities surfaces, not palette tools — do not set `is_extension=True` for a
   workbench tool.
 - **The eligibility recognizer must stay pure.** `tool_eligibility.py` is
-  AST-scanned by `MyCiteV2/tests/architecture/test_palette_eligibility_purity.py`
+  AST-scanned by `fnd_app/tests/architecture/test_palette_eligibility_purity.py`
   for forbidden imports (`os`, `sys`, `pathlib`, `sqlite3`, adapters, ports,
   instances, …) and for any top-level cache/handle/session state. Keep all
   eligibility logic data-driven off the registry entry's `applies_to_*` tuples;
@@ -373,24 +373,24 @@ contract, different `build_panel_payload` strategy.
 
 Add and run the tests that pin the contract for the surfaces you touched:
 
-- **Eligibility logic** — `MyCiteV2/tests/unit/test_tool_eligibility.py`
+- **Eligibility logic** — `fnd_app/tests/unit/test_tool_eligibility.py`
   exercises `recognize_applicable_tools` (extensions excluded, archetype match,
   source_kind match, hyphae-chain widening, deterministic ordering, empty/unknown
   address). Add a case that asserts your `applies_to_*` binding matches the
   documents you expect and rejects the ones you don't.
-- **Palette response + endpoint** — `MyCiteV2/tests/integration/test_tool_palette.py`
+- **Palette response + endpoint** — `fnd_app/tests/integration/test_tool_palette.py`
   drives `build_eligible_tools_response` and the `GET /portal/api/tools/eligible`
   endpoint, and asserts each tool entry carries `label`, `summary`, and the
   dispatch `route`. It already checks that `cts_gis` and `workbench_ui` appear in
   the no-context response; extend the assertions to include your `tool_id`.
-- **Purity guard** — `MyCiteV2/tests/architecture/test_palette_eligibility_purity.py`
+- **Purity guard** — `fnd_app/tests/architecture/test_palette_eligibility_purity.py`
   is your safety net if you were tempted to add I/O to the recognizer. Run it to
   confirm you didn't.
 
 Run them with the project's test runner (e.g.
-`python -m pytest MyCiteV2/tests/unit/test_tool_eligibility.py
-MyCiteV2/tests/integration/test_tool_palette.py
-MyCiteV2/tests/architecture/test_palette_eligibility_purity.py`).
+`python -m pytest fnd_app/tests/unit/test_tool_eligibility.py
+fnd_app/tests/integration/test_tool_palette.py
+fnd_app/tests/architecture/test_palette_eligibility_purity.py`).
 
 ## Future: hyphae-value binding
 

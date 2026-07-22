@@ -30,6 +30,7 @@ from typing import Any
 
 from micyte.core.structures.samras.structure import as_text
 
+from . import field_registry as _fr
 from . import node_addrs as na
 from .ops import Workbook
 
@@ -43,7 +44,11 @@ _MULTI_SEG_RE = re.compile(r"^[0-9]+(-[0-9]+)+$")
 # types rf.3-1-13 = lcl_id (its rf.3-1-1/3-1-5 slots are coordinate/identification, so
 # the agro markers cannot double there). Only node-id markers produce cross-document
 # reference edges. Configurable per sandbox.
-NODE_REF_MARKERS = frozenset({"rf.3-1-1", "rf.3-1-5", "rf.3-1-13"})
+NODE_REF_MARKERS = frozenset({
+    _fr.marker(_fr.FARM, "txa_id"),       # rf.3-1-1 — agro node id
+    _fr.marker(_fr.FARM, "lcl_id"),       # rf.3-1-5 — agro lcl id
+    _fr.marker(_fr.REGISTRAR, "lcl_id"),  # rf.3-1-13 — registrar (mycelium) lcl id
+})
 
 
 def is_reference_marker(token: object) -> bool:

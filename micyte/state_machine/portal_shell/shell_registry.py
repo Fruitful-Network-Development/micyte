@@ -45,7 +45,27 @@ from .shell_state import PortalSurfaceCatalogEntry
 # module load), so the functions below resolve the class lazily.
 
 
-def build_portal_surface_catalog() -> tuple[PortalSurfaceCatalogEntry, ...]:
+def build_portal_surface_catalog(*, network_enabled: bool = True) -> tuple[PortalSurfaceCatalogEntry, ...]:
+    # `network_enabled` gates the NETWORK root surface. DEFAULT True — zero
+    # behaviour change. When an instance sets it False the NETWORK entry is
+    # ABSENT from the catalog entirely, so it never paints in the activity bar
+    # (the activity builder iterates this catalog) and never resolves as a
+    # launchable surface. The flag is threaded from the instance config
+    # (V2PortalHostConfig.network_enabled, read from private/config.json).
+    network_entries: tuple[PortalSurfaceCatalogEntry, ...] = (
+        (
+            PortalSurfaceCatalogEntry(
+                surface_id=NETWORK_ROOT_SURFACE_ID,
+                label="Network",
+                route=NETWORK_ROOT_ROUTE,
+                root_surface_id=NETWORK_ROOT_SURFACE_ID,
+                surface_kind="network_root",
+                page_owner="network",
+            ),
+        )
+        if network_enabled
+        else ()
+    )
     return (
         PortalSurfaceCatalogEntry(
             surface_id=SYSTEM_ROOT_SURFACE_ID,
@@ -56,14 +76,7 @@ def build_portal_surface_catalog() -> tuple[PortalSurfaceCatalogEntry, ...]:
             page_owner="system",
             default_surface=True,
         ),
-        PortalSurfaceCatalogEntry(
-            surface_id=NETWORK_ROOT_SURFACE_ID,
-            label="Network",
-            route=NETWORK_ROOT_ROUTE,
-            root_surface_id=NETWORK_ROOT_SURFACE_ID,
-            surface_kind="network_root",
-            page_owner="network",
-        ),
+        *network_entries,
         PortalSurfaceCatalogEntry(
             surface_id=UTILITIES_ROOT_SURFACE_ID,
             label="Utilities",

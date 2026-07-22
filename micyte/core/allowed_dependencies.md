@@ -1,4 +1,4 @@
 # Allowed Dependencies
 
 - standard library
-- other modules inside `packages/core/`
+- other modules inside `micyte/core/`

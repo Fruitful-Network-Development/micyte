@@ -43,6 +43,6 @@ codec must (a) honor the firm rules above and round-trip, and (b) be validated
 against the `anthology-notes.txt` worked example.
 
 > Status: spec-of-record (recovered). The shipping codec under
-> `MyCiteV2/packages/core/mss/` is being built against these rules; today's
+> `micyte/core/mss/` is being built against these rules; today's
 > `mos.mss_sha256_v1` (JSON-of-rows + SHA-256) is a canonical-ish **stand-in**,
 > not the binary MSS sequence.

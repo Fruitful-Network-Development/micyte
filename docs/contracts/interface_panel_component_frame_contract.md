@@ -535,7 +535,7 @@ incremental rollout and rollback.
 
 The directive terminal accepts free-form text in a canonical format. All parsing and
 validation is performed by `parse_directive_text()` in
-`MyCiteV2/packages/state_machine/nimm/directives.py`.
+`micyte/state_machine/nimm/directives.py`.
 
 **Format:**
 
@@ -562,7 +562,7 @@ man;cts_gis:1-1-2       → manipulate, no automatic frame engagement
 | `man` | `manipulate` |
 
 **Verb→frame engagement** is defined by `NIMM_VERB_FRAME_ENGAGEMENT` in
-`MyCiteV2/packages/state_machine/nimm/mediate_handlers.py`. The map is the single
+`micyte/state_machine/nimm/mediate_handlers.py`. The map is the single
 authoritative source for which frame a given verb re-engages — tool runtimes must not
 hardcode this mapping inline.
 
@@ -576,7 +576,7 @@ human-readable format string used in error messages throughout the system.
 The CTS-GIS Garland tab is the reference implementation of a tab built from a single
 top-level `component_group` whose `children` are the six modular component shells
 shown in the user-facing wireframe. Each shell is built with the matching reusable
-builder in `MyCiteV2/packages/state_machine/nimm/mediate_handlers.py`. The top-level
+builder in `micyte/state_machine/nimm/mediate_handlers.py`. The top-level
 group carries `tab_id="garland"` so the renderer scopes the entire composition to
 the Garland tab.
 

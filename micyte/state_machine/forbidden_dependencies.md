@@ -1,6 +1,6 @@
 # Forbidden Dependencies
 
-- `packages/tools/`
+- `micyte/tools/`
 - `packages/adapters/`
 - `packages/sandboxes/`
 - `instances/`

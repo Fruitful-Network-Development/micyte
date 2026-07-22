@@ -2,7 +2,7 @@
 
 Authority: [../../../docs/contracts/portal_shell_contract.md](../../../docs/contracts/portal_shell_contract.md)
 
-`packages/state_machine/` owns portal-shell legality, AITAS vocabulary, NIMM directives, and the SYSTEM/tool surface state model.
+`micyte/state_machine/` owns portal-shell legality, AITAS vocabulary, NIMM directives, and the SYSTEM/tool surface state model.
 
 The retained shell model is summarized in [../../../docs/contracts/portal_shell_contract.md](../../../docs/contracts/portal_shell_contract.md).
 

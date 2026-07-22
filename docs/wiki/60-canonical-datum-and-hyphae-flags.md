@@ -36,16 +36,16 @@ copied, re-nested, renamed, or re-addressed, because a `layer-vg-iteration`
 address is positional and changes under ordinary edits (insert/move shift every
 sibling's iteration — see `preview_document_insert` /
 `preview_document_move` in
-`MyCiteV2/packages/adapters/sql/datum_semantics.py:474` and `:587`).
+`micyte/adapters/sql/datum_semantics.py:474` and `:587`).
 
 Today binding is keyed on two coarse, *non-canonical* signals:
 
 1. **Archetype / source-kind strings** for tools
    (`recognize_applicable_tools` in
-   `MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:64`), and
+   `micyte/state_machine/portal_shell/tool_eligibility.py:64`), and
 2. **`recognized_family` / `value_kind` / overlay strings** for lenses
    (`DatumLensRegistry.resolve` in
-   `MyCiteV2/packages/state_machine/lens/registry.py:51`).
+   `micyte/state_machine/lens/registry.py:51`).
 
 Both are insufficient against the vision:
 
@@ -53,7 +53,7 @@ Both are insufficient against the vision:
   of a tiny closed vocabulary — `nominal_babelette`, `network_babelette`,
   `samras`, `hops`, … derived purely from a substring match on the anchor label
   (`_family_contract` in
-  `MyCiteV2/packages/modules/domains/datum_recognition/service.py:126`). Two
+  `micyte/domains/datum_recognition/service.py:126`). Two
   datums that are semantically different but share an anchor label collapse to
   the same family, and a datum whose anchor label is unrecognized falls to
   `unrecognized_family` (`service.py:533`) and binds to nothing. There is no way
@@ -86,7 +86,7 @@ Cited facts, each read from the file before citing.
 ### 1. The core hyphae chain is fully inclusive — no minimum-but-complete path
 
 `derive_hyphae_chain` in
-`MyCiteV2/packages/core/mss/datum_identity.py:126` returns **every** rudi address
+`micyte/core/mss/datum_identity.py:126` returns **every** rudi address
 `0-0-1 .. 0-0-K`, where `K` is the highest rudi iteration reachable in the
 transitive dependency closure of the target address. The docstring is explicit:
 *"Every position 1..K is included even if not directly referenced by
@@ -102,7 +102,7 @@ range `range(1, max_k + 1)` (`datum_identity.py:172`–`177`). So:
 
 ### 2. The MSS version hash is whole-document, not per-datum-path
 
-`compute_mss_hash` in `MyCiteV2/packages/core/mss/datum_identity.py:101` hashes a
+`compute_mss_hash` in `micyte/core/mss/datum_identity.py:101` hashes a
 canonical payload of **all** sorted rows plus `source_kind` and
 `document_metadata` (`datum_identity.py:110`–`123`). It is a *document version*
 identity, not a *single datum's* canonical identity, and it has no notion of an
@@ -110,7 +110,7 @@ abstraction path.
 
 ### 3. The richer per-row semantic + hyphae engine exists — but in the SQL adapter
 
-`MyCiteV2/packages/adapters/sql/datum_semantics.py` is the engine that actually
+`micyte/adapters/sql/datum_semantics.py` is the engine that actually
 computes content-derived identities:
 
 - `build_document_version_identity` (`datum_semantics.py:136`) produces the same
@@ -132,10 +132,10 @@ it is still **inclusive, not minimum-but-complete**.
 
 ### 4. There is a core → adapter import inversion
 
-`MyCiteV2/packages/core/datum_ops/ops.py:24` and
-`MyCiteV2/packages/core/datum_ops/node_ops.py:17` both import
+`micyte/core/datum_ops/ops.py:24` and
+`micyte/core/datum_ops/node_ops.py:17` both import
 (`parse_datum_address`, `preview_document_*`) **from**
-`MyCiteV2.packages.adapters.sql.datum_semantics`. A core package depending on a
+`micyte.adapters.sql.datum_semantics`. A core package depending on a
 SQL adapter is an inversion of the dependency direction. A separate wiki unit
 covers relocating this engine to `core/datum_semantics/`; this page assumes that
 relocation as a prerequisite (see Migration path) and forward-refs
@@ -144,18 +144,18 @@ relocation as a prerequisite (see Migration path) and forward-refs
 ### 5. Tool binding has no hyphae-value registry
 
 `recognize_applicable_tools`
-(`MyCiteV2/packages/state_machine/portal_shell/tool_eligibility.py:64`) matches
+(`micyte/state_machine/portal_shell/tool_eligibility.py:64`) matches
 `applies_to_archetype` / `applies_to_source_kind`
 (`tool_eligibility.py:104`–`110`), widened via `derive_hyphae_chain`
 (`tool_eligibility.py:92`). `PortalToolRegistryEntry`
-(`MyCiteV2/packages/state_machine/portal_shell/shell.py:477`) carries
+(`micyte/state_machine/portal_shell/shell.py:477`) carries
 `applies_to_archetype`, `applies_to_source_kind`, and a reserved-but-unconsumed
 `manipulates_datum_kinds` (`shell.py:490`–`499`) — but **no hyphae-value field**.
 There is no registry keyed on a hyphae VALUE.
 
 ### 6. Lens binding resolves by family / value-kind / overlay strings
 
-`DatumLensRegistry` (`MyCiteV2/packages/state_machine/lens/registry.py:25`)
+`DatumLensRegistry` (`micyte/state_machine/lens/registry.py:25`)
 holds three string-keyed dicts — `_family_lenses`, `_value_kind_lenses`,
 `_overlay_lenses` (`registry.py:29`–`48`) — and `resolve`
 (`registry.py:51`–`67`) checks them in that order, falling back to
@@ -167,7 +167,7 @@ the registry never sees one.
 ### 7. `recognized_family` is a substring match on an anchor label
 
 `_family_contract`
-(`MyCiteV2/packages/modules/domains/datum_recognition/service.py:126`) maps an
+(`micyte/domains/datum_recognition/service.py:126`) maps an
 anchor label to `(family, value_kind, overlay_kind)` by substring tests
 (`"samras" in label`, `"hops" in label`, etc.). `_build_reference_bindings`
 (`service.py:476`) takes the **first** recognized family it sees on the row
