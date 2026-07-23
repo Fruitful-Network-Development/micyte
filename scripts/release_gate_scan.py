@@ -59,7 +59,7 @@ def is_private(rel_path: str) -> bool:
 # --- sensitive literals (only ever checked against PUBLIC files) --------------
 
 SENSITIVE = {
-    "live_msn": re.compile(r"\b3-2-3-17-(?:66|77)(?:-\d+)+\b"),
+    "live_msn": re.compile(r"\b3-2-3-17-(?:66|77)(?:-\d+)*\b"),
     "srv_path": re.compile(r"/srv/[a-z]"),
     "route53_zone": re.compile(r"\bZ[A-Z0-9]{12,}\b"),
     "aws_account": re.compile(r"\b0659\d{8}\b"),
