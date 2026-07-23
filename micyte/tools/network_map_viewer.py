@@ -494,6 +494,13 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                 if not node or not lcl_node or lonlat is None:
                     continue
                 category = _category_for(lcl_node)
+                icon = _substance_for_profile(lcl_node)   # WHAT it markets → glyph
+                if icon == "farm_stand" and category == "producer":
+                    # Entity-LEVEL farm-stand profiles (lcl 1-2-1-4 subtype)
+                    # present as farm stands EVERYWHERE — TYPE facet, chip and
+                    # section must all read "Farm stand", never "Producer" —
+                    # so the category follows the glyph coercion.
+                    category = "farm_stand"
                 region_node, region_label = region_of(node)
                 county_node, county_label = county_of(node)
                 kind = entity_kind_of(node)
@@ -519,7 +526,7 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                     "county": county_label,
                     "lon": lonlat[0], "lat": lonlat[1],
                     "color": cls_style["color"],      # brand class colour
-                    "icon": _substance_for_profile(lcl_node),  # WHAT it markets → glyph
+                    "icon": icon,
                     "dns": pairs.get("rf.3-1-9", [""])[0],
                 })
         elif res["kind"] == "events":
@@ -623,8 +630,9 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     # NB: no farm-stand override here any more. Doctrine: entities are nodes; farm stands
     # are EVENTS. A producer that hosts a 1-3-3 recurrence stays a producer node (farm
     # glyph, peer section) — the farm-stand fact is carried by the event. Entity-LEVEL
-    # farmstand profiles (lcl 1-2-1-4 subtype) still glyph/section as farm stands via
-    # _substance_for_profile + _section_for.
+    # farmstand profiles (lcl 1-2-1-4 subtype) are coerced to category "farm_stand" at
+    # profile build, so TYPE facet, chip and section all agree ("Farm stand" on the
+    # operation tab — never a "Producer" chip on an operation profile).
 
     # NETWORK sub-tab sectioning: tag each profile and each event, then filter to the
     # requested section. Facets + widgets below are computed from the filtered lists,
