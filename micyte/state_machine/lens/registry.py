@@ -6,6 +6,7 @@ from typing import Any
 from .base import (
     BinaryTextLens,
     EmailAddressLens,
+    FiatCentsLens,
     IdentityLens,
     Lens,
     NumericHyphenLens,
@@ -23,6 +24,7 @@ _LENS_METADATA: dict[str, tuple[str, str]] = {
     "samras_title": ("SAMRAS title", "Decodes a SAMRAS-encoded title."),
     "email_address": ("Email address", "Lowercases / normalizes an email address."),
     "secret_reference": ("Secret reference", "Renders a vault secret reference, never the value."),
+    "fiat_cents": ("Price (cents)", "Renders a fiat magnitude as currency: 450 shows as $4.50."),
 }
 
 
@@ -55,17 +57,20 @@ class DatumLensRegistry:
             "samras_babelette": NumericHyphenLens(),
             "hops": NumericHyphenLens(),
             "hops_babelette": NumericHyphenLens(),
+            "fiat_babelette": FiatCentsLens(),
         }
         self._value_kind_lenses = {
             "binary_string": BinaryTextLens(),
             "numeric_hyphen": NumericHyphenLens(),
             "literal_text": TrimmedStringLens(),
+            "fiat_cents": FiatCentsLens(),
             "tuple": IdentityLens(),
             "unknown": IdentityLens(),
         }
         self._overlay_lenses = {
             "title_babelette": BinaryTextLens(),
             "binary_overlay": BinaryTextLens(),
+            "fiat_babelette": FiatCentsLens(),
         }
         self._default_lens = IdentityLens()
         # Lens-id → lens, for resolving a hyphae-flag's bound lens_id. Covers the
@@ -80,6 +85,7 @@ class DatumLensRegistry:
                 SamrasTitleLens(),
                 EmailAddressLens(),
                 SecretReferenceLens(),
+                FiatCentsLens(),
             )
         }
 

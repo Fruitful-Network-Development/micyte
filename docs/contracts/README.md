@@ -14,9 +14,19 @@ Canonical cross-cutting contracts for the one-shell V2 portal model.
 
 ## Panel and Interface Contracts
 
-- [control_panel_context_control_contract.md](control_panel_context_control_contract.md)
-- [interface_panel_component_frame_contract.md](interface_panel_component_frame_contract.md)
-- [portal_panel_state_distinction.md](portal_panel_state_distinction.md)
+Both panel REGIONS are retired — `shell_composition.regions` is exactly
+`{activity_bar, workbench}`. Their contracts are kept for the models that outlived them,
+and each says so at the top; neither describes a region you can compose today.
+
+- [control_panel_context_control_contract.md](control_panel_context_control_contract.md) — RETIRED 2026-08-16
+- [interface_panel_component_frame_contract.md](interface_panel_component_frame_contract.md) — RETIRED; the component-frame lifecycle survives it
+- [portal_panel_state_distinction.md](portal_panel_state_distinction.md) — the distinction holds; the column it assumed does not
+
+## Network, Channels, and the Binding Store
+
+- [contract_formation.md](contract_formation.md) — how two instances form a contract
+- [hosted_alias_interface.md](hosted_alias_interface.md) — a channel's two halves and their postures
+- [port_binding_store.md](port_binding_store.md) — the shape of `private/config.json`, validated
 
 ## Addressing, Naming, and Authority
 
@@ -31,6 +41,7 @@ Canonical cross-cutting contracts for the one-shell V2 portal model.
 - [samras_engine_ui_boundary.md](samras_engine_ui_boundary.md)
 - [mutation_contract.md](mutation_contract.md)
 - [datum_editing_atomicity.md](datum_editing_atomicity.md)
+- [mss_engine_invariants.md](mss_engine_invariants.md) — what the engine refuses, and the test that pins each refusal
 
 ## Binary Address Encoding
 

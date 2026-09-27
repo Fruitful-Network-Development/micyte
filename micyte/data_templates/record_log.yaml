@@ -1,0 +1,46 @@
+template_id: record_log
+schema: mycite.v2.datum.standard.record_log.v1
+sandbox: "*"
+archetype: standard_log_row
+description: >
+  An append-only log: who did what to which subject, and when. One row per
+  entry in layer 4 / value-group 7.
+
+  Append-only is a CONVENTION here, not an enforced property — the datum store
+  has no immutable-row concept, and claiming one this template cannot keep
+  would be worse than saying so. What the shape does give you is a row whose
+  order is its `at` magnitude rather than its position, so an entry inserted
+  out of order still reads in sequence.
+
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.standard.record_log.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "{{sandbox}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+repeating_archetype:
+  layer: 4
+  value_group_reference_design:
+    at:
+      magnitude_kind: utc_seconds
+      required: true
+    actor:
+      magnitude_kind: trimmed_string
+      required: true
+    action:
+      magnitude_kind: trimmed_string
+      required: true
+    subject:
+      magnitude_kind: trimmed_string
+      required: false
+    detail:
+      magnitude_kind: trimmed_string
+      required: false

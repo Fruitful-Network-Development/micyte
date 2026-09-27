@@ -1,5 +1,13 @@
 > Status: how-to
-[← Overview](00-overview-and-glossary.md)
+>
+> [← Overview](00-overview-and-glossary.md)
+>
+> Rewritten 2026-08-23. The procedure was always sound; its WORKED EXAMPLE was
+> `workbench_ui_view.py`, retired 2026-08-14 (`cf17ec53`), so a reader following this page
+> was told to model their tool on a file that no longer exists. It now models it on
+> `pim_overview.py`, which is the smallest complete tool in the tree — five attributes,
+> one method — and was written the week this page was fixed, so it demonstrates the
+> contract as it actually stands.
 
 # How to author a new workbench tool
 
@@ -32,7 +40,7 @@ payload* the JS renderer paints into the workbench visualization panel.
 | Tool contract (protocol) | `micyte/tools/_contract.py` |
 | Tool registry | `micyte/tools/_registry.py` |
 | Package import wiring | `micyte/tools/__init__.py` |
-| Worked-example tool (palette entry) | `micyte/tools/workbench_ui_view.py` |
+| Worked-example tool (smallest complete) | [`micyte/tools/pim_overview.py`](../../micyte/tools/pim_overview.py) |
 | Worked-example read service | `micyte/tools/workbench_ui/service.py` |
 | Second example (content-resolving) | `micyte/tools/product_document_view.py` |
 | Shell registry entry (palette target) | `micyte/state_machine/portal_shell/shell_registry.py` |
@@ -92,7 +100,8 @@ eligibility dicts.
 
 Create `micyte/tools/<your_tool_id>.py` with a class that carries the
 five attributes and `build_panel_payload`. Model it on
-`micyte/tools/workbench_ui_view.py:30`:
+[`micyte/tools/pim_overview.py`](../../micyte/tools/pim_overview.py) — the smallest
+complete tool in the tree, and short enough to read in one sitting:
 
 ```python
 from __future__ import annotations
@@ -134,12 +143,15 @@ class MyTool:
 
 Notes drawn from the real tools:
 
-- `workbench_ui_view.py` is a thin palette entry whose `build_panel_payload`
-  (`workbench_ui_view.py:47`) returns only a schema marker, because that tool
-  *navigates to its own surface* rather than rendering in the panel — its heavy
-  document/grid/overlay rendering lives in the read service
-  `micyte/tools/workbench_ui/service.py:468`
-  (`WorkbenchUiReadService.read_surface`, `service.py:586`).
+- [`micyte/tools/pim_overview.py`](../../micyte/tools/pim_overview.py) paints the panel
+  directly: `build_panel_payload` returns a `record_table` and the tool holds no state.
+  This is the shape to copy unless you have a reason not to.
+- A tool may instead NAVIGATE to its own surface, returning only a schema marker from
+  `build_panel_payload` and doing its rendering in a read service. That was
+  `workbench_ui_view`'s shape until it was retired 2026-08-14; the heavy grid rendering it
+  delegated to still lives in
+  [`micyte/tools/workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py).
+  Reach for it only when the surface genuinely cannot be a panel.
 - `micyte/tools/product_document_view.py:130`
   (`ProductDocumentViewer`) is the opposite pattern: its `build_panel_payload`
   (`product_document_view.py:144`) reads the sandbox's documents and resolves a
@@ -153,7 +165,7 @@ registry-facing shell.
 ### 2. Register it
 
 Two things make the tool discoverable. First, self-register at module scope —
-the last line of `workbench_ui_view.py:71` is the model:
+the last line of [`pim_overview.py`](../../micyte/tools/pim_overview.py) is the model:
 
 ```python
 # Self-register on import.
@@ -163,7 +175,7 @@ register(MyTool())
 Second, import your module from the package `__init__` so the registry is
 populated whenever a consumer imports `micyte.tools`. Add it to the
 side-effect import block in `micyte/tools/__init__.py` (alongside
-`workbench_ui_view`, `product_document_view`, `cts_gis_*`):
+`pim_overview`, `artifacts_viewer`, `product_document_view`):
 
 ```python
 from . import (
@@ -172,7 +184,7 @@ from . import (
     cts_gis_map,          # noqa: F401
     my_tool,              # noqa: F401  <-- add this
     product_document_view,  # noqa: F401
-    workbench_ui_view,    # noqa: F401
+    pim_overview,    # noqa: F401
 )
 ```
 
@@ -194,7 +206,9 @@ document's tokens:
 Pick the narrowest binding that is correct:
 
 - `workbench_ui` is the universal grid, so it binds by source kind to both
-  `sandbox_source` and `system_anthology` (`workbench_ui_view.py:45`).
+  `sandbox_source` and `system_anthology`. A tool launched by ADDRESS instead — a hub or
+  an instrument — declares neither, which is how `pim_overview` and `artifacts` say "open
+  me against the instance, not against the document in focus".
 - `product_document` is specific to one archetype, so it binds *only* by
   `applies_to_archetype=("agro_erp_product_profile_row",)` and deliberately
   leaves `applies_to_source_kind` empty
@@ -308,15 +322,15 @@ matches it.
 trace from registration to render:
 
 1. **Contract object** —
-   `micyte/tools/workbench_ui_view.py:30` defines `WorkbenchUiTool`
+   [`micyte/tools/pim_overview.py`](../../micyte/tools/pim_overview.py) defines `PimOverview`
    with `tool_id="workbench_ui"`, `route=WORKBENCH_UI_TOOL_ROUTE`, and
    `applies_to_source_kind=("sandbox_source", "system_anthology")`
-   (`workbench_ui_view.py:45`).
+   (its `applies_to_*` are empty — it is launched by address).
 2. **`build_panel_payload`** — returns just a schema marker
-   (`workbench_ui_view.py:47`) because selecting it *navigates to its own
+   returns a `record_table` rather than *navigating to its own
    surface* rather than painting into the panel.
 3. **Self-register** — `register(WorkbenchUiTool())` at
-   `workbench_ui_view.py:71`, and the module is imported from
+   the last line of `pim_overview.py`, and the module is imported from
    `micyte/tools/__init__.py` so the registry is populated on import.
 4. **Surface rendering** — the actual two-pane document table + datum grid +
    directive overlay is produced by `WorkbenchUiReadService`
@@ -340,11 +354,18 @@ contract, different `build_panel_payload` strategy.
 
 ## Pitfalls
 
-- **Extensions are excluded from the palette.** A `PortalToolRegistryEntry` with
-  `is_extension=True` (the `ext_*` entries in `shell_registry.py`) is skipped by
-  `recognize_applicable_tools` (`tool_eligibility.py:102`). Extensions are
-  Utilities surfaces, not palette tools — do not set `is_extension=True` for a
-  workbench tool.
+- **A workbench tool renders; it does not write on a schedule.** If what you are
+  building runs on a CONDITION rather than for a person — the user's "task rabbit"
+  — it belongs in [`micyte/automation`](../../micyte/automation/), not here.
+  `micyte.tools.register` refuses anything carrying a `routine_id`, and
+  `micyte.automation.register` refuses anything carrying `route` /
+  `build_panel_payload` / `applies_to_archetype`. The distinction is enforced at
+  both doors because a taxonomy nothing enforces is a naming convention.
+- **Eligibility is by declaration.** A registry entry that declares neither
+  `applies_to_archetype` nor `applies_to_source_kind` is never offered. (The
+  `is_extension` flag that used to exempt Utilities extension entries from the
+  palette was removed in the Phase 3 taxonomy; no entry had raised it since those
+  tools were dissolved.)
 - **The eligibility recognizer must stay pure.** `tool_eligibility.py` is
   AST-scanned by `fnd_app/tests/architecture/test_palette_eligibility_purity.py`
   for forbidden imports (`os`, `sys`, `pathlib`, `sqlite3`, adapters, ports,
@@ -362,12 +383,97 @@ contract, different `build_panel_payload` strategy.
 - **Two registries, kept in sync.** The viz registry (`_registry.py`) feeds the
   menu-bar search; the shell `PortalToolRegistryEntry` list (`shell_registry.py`)
   feeds palette-target identity. Their `applies_to_*` should agree, as
-  `workbench_ui` keeps them (`workbench_ui_view.py:45` ↔ `shell_registry.py:178`).
+  a registered tool keeps them in step with `shell_registry`.
 - **Metadata key names matter.** The palette runtime reads
   `datum_template_archetype` and `samras_family` from `document_metadata`
   (`portal_palette_runtime.py:107`), while the pure recognizer reads the
   `archetype` key (`tool_eligibility.py:44`). When you wire test fixtures, use
-  the key the path under test actually reads.
+  the key the path under test actually reads. **A write path that CREATES a
+  document must stamp it too** — `save_invoice`/`save_sale` build theirs with
+  `_archetype_metadata(name)`. Created with `metadata={}` a document carries no
+  archetype at all, so the palette can never offer the viewer written for it, and
+  nothing fails: the named-document tools resolve by `canonical_name` and keep
+  working, so only discovery goes quiet.
+- **A second writable record table is not a second renderer.** The
+  `editable_table` container (`micyte/tools/_editable_table.py`) takes its field
+  set from the payload — column 0 is the record's server-assigned identity, the
+  declared `fields` fill the rest, and `save_route`/`sandbox_id` say where the row
+  POSTs. `inventory_manager` (supply batches) and `sales_manager` (sales) share
+  it. **Never give the container a fallback sandbox**: it used to read
+  `payload.sandbox_id || "<a_farm_sandbox>"` and put that name in the request
+  body, so a payload that had lost its farm wrote into one particular farm's
+  books. With no sandbox it disables saving and says so.
+- **A row's buttons are declarations, not renderer branches.** `row_actions`
+  (`post_action` / `toggle_action` / `nav_action`) carries them in the payload.
+  The renderer used to know the supply batch's *Retire* toggle and its *Plan into
+  plots* jump by name, so the third record type's action would have been a third
+  branch in a renderer whose whole point is not to know what a record is. A row
+  action restates the row and merges its own keys in, and it always sends
+  **date-kind fields blank** — every write route reads an omitted date as "keep
+  the one on file", so an action must never re-stamp the record to today.
+- **A derived figure is a `computed_columns` entry, not a field.** A field gets an
+  input box and posts under its name; giving one to a server-derived number lets
+  the operator type a value the write route ignores. On-hand in the offering table
+  is the case: it comes from the farm's supply batches, and an input there would
+  let a catalog assert stock the farm's own records do not support.
+- **A published artifact has to stand alone.** A still is published by itself, so
+  anything it needs in order to be read has to be *in* it. The offering row stores
+  its listing NAME rather than resolving the product's label from `lcl`, because
+  the alternative is publishing a farm's entire node tree to name two vegetables —
+  discovered by publishing one and getting back `1-1-5-2 | $3.00 / lb`.
+
+- **Money is an integer count of cents, never text and never a float.** Every money field
+  — an offer's price, a sale's price, a supply batch's cost, a contract's cost — is a
+  magnitude against the sandbox's fiat datum (`micyte/core/datum_ops/fiat_datum.py`),
+  and `parse_cents` / `format_cents` are the only place it changes representation.
+  Half a cent is *refused*, not rounded — rounding picks a side of the operator's
+  intent and records the result as though it were what they typed. The tools layer
+  formats for display; the port carries `price_cents: int`, because a port that hands
+  a storefront `"$4.00"` has made the storefront parse money out of a string.
+
+  An **amount** is not money and stays a nominal: `"10 lbs"` is a label carrying its own
+  unit, and nothing totals it. What a batch cost and what its produce sells for are the two
+  ends of one ledger, so those two must be the same kind of value or nothing can subtract
+  them — and normalizing a cost to cents made the contract dedup strictly better, since
+  `"$40"`, `"40.00"` and `" $40.00 "` were three signatures that each minted a row and
+  double-counted the invoice draw-down.
+
+- **A price marker is NOT network-wide, so never hardcode its address.** Every other
+  column kind maps to a marker that means the same thing everywhere; the fiat
+  babelette lives wherever a given sandbox's anchor allocated it. Resolve it with
+  `find_fiat_chain(anchor_doc)`, which identifies the chain **structurally** — by what
+  it is made of, not where it sits or what it is called — so a sandbox provisioned
+  differently, and a still that arrived from another network, both read correctly.
+  A sandbox with no chain gets a refusal naming the provisioner; it does not get a
+  default address, because the same `3-1-N` names a different field in every
+  namespace and a guess would price a product against another field's meaning.
+
+- **A record document should carry the definitions of the markers it uses.**
+  Recognition resolves an `rf.3-1-N` through `document.anchor_rows`, and every document
+  in the live store carries **zero** of them — so every reference reads as
+  `unresolved_anchor`, no family is recognized, and *no lens binds anywhere in the raw
+  workbench*, not even the title decoder. The write path now attaches the **minimum
+  abstraction closure** (`abstraction_closure`) rather than the whole anchor, which is
+  a few dozen rows instead of a farm's entire lcl-SAMRAS bitstream. It fixes the raw
+  workbench, and it makes a published still stand alone without the exporter arranging
+  anything.
+
+- **Resolve a lens per BINDING, not per row.** The row-level `recognized_family` is the
+  *first* family recognized on the row — right for a single-value datum, wrong for a
+  record row, where an offering leads with an lcl reference and would render its price
+  with the node-address lens. Each `reference_binding` carries its own
+  `expected_value_kind`, and that is what a cell overlay resolves from.
+
+## Publishing a document
+
+`export_registry_still` → `private/stills/<name>.mss` → *Utilities > Resource
+Management* → `GET /__mss/public/stills/<name>.mss`. Four steps, and they agree on
+**one identifier**: the filename stem is the still's name, which is the key
+`held_stills()` indexes by, the name the contact card's allowlist carries, and the
+name the serve route takes. The exporter once wrote `stl.<msn>.<name>.mstl` and
+matched none of them, so an export was invisible to the surface that publishes it.
+Publication itself is a **card mutation** and there is no other publish path —
+dropping a file in the stills directory holds it privately, nothing more.
 
 ## Testing your tool
 
@@ -396,12 +502,17 @@ fnd_app/tests/architecture/test_palette_eligibility_purity.py`).
 
 Today a tool binds by **archetype / source_kind**, widened along the hyphae
 chain — not by a first-class **hyphae value** (e.g. binding directly to a
-family's *root common datum*). The `PortalToolRegistryEntry.manipulates_datum_kinds`
-field (`shell.py:499`) is already reserved for future tool→datum applicability
-checks but is not yet consumed by the eligibility predicate. When hyphae-value
-binding lands, a tool will be able to declare the specific hyphae value (root
-common datum of a family) it operates on, rather than approximating that
-intent through archetype tokens.
+family's *root common datum*). `PortalToolRegistryEntry.applies_to_hyphae_value`
+and the third branch of `recognize_applicable_tools` are in place; no production
+entry sets one yet. When hyphae-value binding lands, a tool will be able to
+declare the specific hyphae value (root common datum of a family) it operates on,
+rather than approximating that intent through archetype tokens.
+
+A field that once claimed this ground, `manipulates_datum_kinds`, was removed
+instead of wired: it described what a tool WRITES, which is not an eligibility
+question at all, and it went a year normalized, serialized and read by nothing.
+Reserving a field for a future check is how that happens — the check arrives
+somewhere else, and the field stays behind looking like a guarantee.
 
 For the canonical-datum and hyphae-flag model that this future binding will key
 off, see [60 — Canonical datum and hyphae flags](60-canonical-datum-and-hyphae-flags.md)

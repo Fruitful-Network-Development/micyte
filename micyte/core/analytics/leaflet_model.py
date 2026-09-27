@@ -43,11 +43,14 @@ import logging
 from itertools import pairwise
 from typing import Any
 
+from .bot_detection import prefix_is_internal
 from .derivations import (
     CONVERSION_ACTIONS,
     CONVERSION_EVENT_TYPES,
     HIGH_INTENT_ACTIONS,
     classify_origin,
+    event_is_conversion,
+    event_is_engagement,
     path_touches_intent,
 )
 from .event_schema import _iso_to_epoch_ms
@@ -200,6 +203,9 @@ def _find_or_create_visitor(month: dict[str, Any], cookie: str, occurred: str) -
             "bot_assessment": {"is_bot": False, "bot_class": "", "bot_evidence": []},
             "flags": [],
             "ip_prefixes": [],
+            # Traffic from our own infrastructure (loopback / RFC1918) — a
+            # browser-smoke run is a real browser, so no UA rule catches it.
+            "is_internal": False,
             "share_id": "",   # this visitor's JS-readable fnd_sid (for A→B referral chains)
             "network": None,  # enrichment hook (no GeoIP this pass)
             "region": None,   # enrichment hook
@@ -237,6 +243,8 @@ def _touch_visitor_context(visitor: dict[str, Any], raw: dict[str, Any], occurre
     prefix = _txt(raw.get("ip_prefix"))
     if prefix and prefix not in ctx["ip_prefixes"]:
         ctx["ip_prefixes"].append(prefix)
+    if prefix and prefix_is_internal(prefix):
+        ctx["is_internal"] = True
     # this visitor's own share id (set once) — maps referred_by back to them.
     if not ctx.get("share_id"):
         ctx["share_id"] = _txt(raw.get("share_id"))
@@ -335,22 +343,50 @@ def _recompute_session_summary(session: dict[str, Any]) -> None:
     entry = page_views[0]["page_path"] if page_views else (events[0]["page_path"] if events else "")
     exit_p = page_views[-1]["page_path"] if page_views else (events[-1]["page_path"] if events else "")
 
-    converted = any(
-        e["event_type"] in CONVERSION_EVENT_TYPES or _txt(e.get("action")) in CONVERSION_ACTIONS
-        for e in events
-    )
+    # One predicate, shared with the dashboard widgets — see
+    # derivations.event_is_conversion. An outbound click / download is
+    # ENGAGEMENT, reported beside a conversion and never as one.
+    converted = any(event_is_conversion(e) for e in events)
+    engaged = converted or any(event_is_engagement(e) for e in events)
     touched_intent = any(path_touches_intent(e.get("page_path")) for e in events)
     high_intent = bool(
         (touched_intent and active >= HIGH_INTENT_MIN_ACTIVE_MS)
         or any(_txt(e.get("action")) in HIGH_INTENT_ACTIONS for e in events)
+    )
+    # A session that recorded a page load and NOTHING else — no active time, no
+    # scroll, no action, no conversion, one page. It is a real fact (someone opened
+    # a page) but it has no CONTENT, and 1,255 of 3,546 sessions in the live store
+    # are this. Marked rather than dropped: the dashboard collapses them into one
+    # line so they stop crowding out the sessions that say something, and the page
+    # view is still counted.
+    #
+    # The test is on SIGNAL, not on event count. It used to lead with
+    # `len(events) <= 1`, which the pagehide beacon then made permanently false: the
+    # beacon fires whenever any time or scroll was banked, so essentially every page
+    # view now produces two events and `no_signal` — and `is_bounce` below, which had
+    # the same clause — silently went to zero for all new data. A quiet visit that
+    # reports "I was open for 4 seconds and did nothing" is still a quiet visit.
+    max_scroll = max((_int(e.get("scroll_depth_percent")) for e in events), default=0)
+    no_signal = (
+        len(page_views) <= 1
+        and active == 0
+        and max_scroll == 0
+        and not actions
+        and not converted
     )
     session["session_summary"] = {
         "entry_page": entry,
         "exit_page": exit_p,
         "page_view_count": len(page_views),
         "active_time_ms": active,
+        "max_scroll_percent": max_scroll,
         "converted": converted,
-        "is_bounce": len(page_views) <= 1 and len(events) <= 1,
+        "engaged": engaged,
+        "no_signal": no_signal,
+        # One page view and no engagement. The `len(events) <= 1` this also carried
+        # counted heartbeats as escapes from a bounce, so the rate went to 0% the day
+        # the pagehide beacon started firing on every visit.
+        "is_bounce": len(page_views) <= 1 and not engaged,
         "high_intent": high_intent,
         "abandoned_intent": bool(touched_intent and not converted),
         "actions": actions,
@@ -434,6 +470,13 @@ def flatten_events(month: dict[str, Any]) -> list[dict[str, Any]]:
         prefix = prefixes[0] if prefixes else ""
         device = ctx.get("primary_device_type") or ""
         share_id = ctx.get("share_id") or ""
+        # .get for both: leaflets written before these fields existed are still
+        # read by this code path, and a KeyError here would blank a whole month.
+        browser = ctx.get("primary_browser") or ""
+        os_name = ctx.get("primary_os") or ""
+        is_internal = bool(ctx.get("is_internal")) or any(
+            prefix_is_internal(p) for p in prefixes
+        )
         for s in v.get("sessions", []):
             routed = s.get("routed_from") or {}
             sid = s.get("session_id") or ""
@@ -447,6 +490,9 @@ def flatten_events(month: dict[str, Any]) -> list[dict[str, Any]]:
                         "bot_class": bot_class,
                         "ip_prefix": prefix,
                         "device_type": device,
+                        "browser_name": browser,
+                        "os_name": os_name,
+                        "is_internal": is_internal,
                         "share_id": share_id,
                         "referred_by": referred_by,
                         "event_type": e.get("event_type") or "",

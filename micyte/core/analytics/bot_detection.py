@@ -71,4 +71,32 @@ def classify_user_agent(user_agent: str) -> tuple[bool, str, list[str]]:
     return False, "", []
 
 
-__all__ = ["classify_user_agent"]
+# Coarse /24 (or /48) prefixes whose traffic is ours, not the public's.
+# Loopback is the decisive one: 338 visitor rows in the live store carry
+# 127.0.0.0/24 — requests made ON the box, i.e. browser-smoke runs. 252 of
+# those landed on one site on one day. They are not bots by UA (they drive a
+# real headless browser) so nothing else catches them, and they inflate
+# "unique visitors" with traffic the operator generated.
+_INTERNAL_PREFIXES: tuple[str, ...] = (
+    "127.",        # loopback — the box talking to itself
+    "10.",         # RFC1918
+    "192.168.",    # RFC1918
+    "169.254.",    # link-local
+    "::1",         # IPv6 loopback
+    "fc00:", "fd00:",  # IPv6 unique-local
+)
+
+
+def prefix_is_internal(ip_prefix: str) -> bool:
+    """True when a coarse ip_prefix names our own infrastructure.
+
+    Evidence, like ``bot_class`` — it names a signal, not a verdict. The
+    dashboard uses it to offer "hide internal traffic"; nothing drops a row.
+    """
+    token = (ip_prefix or "").strip().lower()
+    if not token:
+        return False
+    return any(token.startswith(p) for p in _INTERNAL_PREFIXES)
+
+
+__all__ = ["classify_user_agent", "prefix_is_internal"]

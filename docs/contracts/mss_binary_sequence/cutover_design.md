@@ -7,6 +7,15 @@ Goal: make the binary-MSS-sequence hash (`micyte/core/mss/document_codec.py`,
 the `mos.mss_sha256_v1` JSON+SHA-256 stand-in. The maintainer asked to **verify
 conformance + design first**; this is that deliverable.
 
+> **2026-09-24 — where this stands.** The grammar decision in §3 was taken as option 1 (MSS-DOC.v2,
+> then v3); the *transport* that carries a document's rows exactly is MSS-DOC.v4
+> (`transport_v4.md`, `micyte/core/mss/transport.py`), written beside every row since
+> 2026-09-23 and backfilled over the live corpus on 2026-09-24. The migration of §5 is now
+> `fnd_app/scripts/flip_document_identity.py` under the token `MOS_CANONICAL_HASH=mss_binary_v4`,
+> rehearsed as one sequence on a copy with its old→new map; `recompile_datum_semantics.py` (the
+> v2-era tool this page named) is superseded. Whether the flip runs live is the operator's
+> decision — see `evidence/binary-mss-in-sql-2026-09-17/fix_report.md` (phase D) for what it costs.
+
 ## 1. Read-only corpus audit (live `fnd` MOS, 2026-06-01)
 
 Source: `<authority-db>.sqlite3` (read-only).
@@ -75,7 +84,7 @@ be reindexed across the doc set, or qualified refs treated as opaque leaves).
 
 1. Land the adapter + a config flag `MOS_CANONICAL_HASH=mss_binary_v1` (default `off`
    ⇒ `main` stays behavior-preserving).
-2. `scripts/recompile_datum_semantics.py` (offline, on a DB copy first):
+2. `fnd_app/scripts/recompile_datum_semantics.py` (offline, on a DB copy first):
    - recompute every canonical doc's `version_hash` via `mss_document_hash`,
    - reissue save-titles (`lv.<msn>.<sandbox>.<name>.<NEW hash>`) + the documents index,
    - recompute `datum_row_semantics` hyphae values,

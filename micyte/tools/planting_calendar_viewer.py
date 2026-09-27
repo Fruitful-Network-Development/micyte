@@ -9,7 +9,7 @@ serve both referent kinds.
 Distinct from ``agro_calendar`` (the NETWORK tab's month/week grid of public recurring events) —
 different data, different axes; they share nothing but the word calendar.
 
-Row selection matters: a farm can carry thousands of plots (trapp has 3650), so rendering one row
+Row selection matters: a farm can carry thousands of plots (the largest has 3650), so rendering one row
 each would be unusable. Occupied plots always appear; free plots fill the remainder up to a cap and
 the payload reports exactly what was withheld (``hidden_row_count``) rather than truncating quietly.
 """
@@ -22,10 +22,11 @@ from typing import Any
 
 from micyte.state_machine.portal_shell.shell_schemas import WORKBENCH_UI_TOOL_ROUTE
 
-from ._archetype import find_named_document, read_sandbox_catalog, resolve_tool_sandbox
+from ._archetype import find_anchor, find_named_document, read_sandbox_catalog, resolve_tool_sandbox
 from ._consumption import contract_spans, plots_of_referent
 from ._hops_dates import chrono_authority
 from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from .geospatial_projection_viewer import build_geospatial_payload
 from .plot_overview_viewer import parse_day
@@ -65,6 +66,9 @@ class PlantingCalendarViewer:
     summary = "Contracts as bars across days, one row per plot."
     route = WORKBENCH_UI_TOOL_ROUTE
     # Embedded-only pane (composed into the PLAN > Planting sub-tab).
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -74,7 +78,9 @@ class PlantingCalendarViewer:
         datum_address: str, extra_query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         eq = extra_query or {}
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        # ONE sandbox when the request names it; the whole catalog only for the blank
+        # request the resolver answers with the first farm by shape (2026-09-25).
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_as_text(sandbox_id))
         if err:
             return _notice(err)
         sandbox = resolve_tool_sandbox(sandbox_id, docs=docs)
@@ -91,7 +97,7 @@ class PlantingCalendarViewer:
 
         # Rows come from the geometry IN FORCE on the viewing day — the same as_of the map uses, so
         # the two panes always agree about which plots exist.
-        authority = chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor"))
+        authority = chrono_authority(find_anchor(docs, sandbox=sandbox))
         geo = build_geospatial_payload(fp, preview=False, as_of=day, authority=authority)
         plots: dict[str, dict[str, Any]] = {}
         cluster_label: dict[str, str] = {}

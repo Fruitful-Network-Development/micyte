@@ -2,6 +2,24 @@
 
 ## Status
 
+**RETIRED 2026-08-16.** The `control_panel` region was removed by operator directive;
+`shell_composition.regions` is now exactly `{activity_bar, workbench}`. Nothing builds
+`nimm_aitas_control.context_controls` and nothing renders it. The builders behind the
+`spatial` and `attention` controls (`_nimm_navigation_shell_requests`, `_verb_tab_entries`,
+`_system_context_items`) were deleted on 2026-08-17.
+
+Kept as the record of a shape that shipped, not as something to implement against. What
+the panel carried that was worth keeping moved rather than died — see
+`surface_catalog.md` for where each capacity landed (Sources onto the Compendium's level 1,
+Utilities sections onto `section_nav`, Network selection onto `selection_strip`, the app
+install target onto `install_target`, and the sandbox `<select>` onto the level-0 shelf).
+
+The five canonical controls below were never all backed: `archetype` shipped as a disabled
+shell, and the Directive Terminal reported `directive_terminal_not_enabled` on every
+instance for the whole life of the region.
+
+## Original specification (historical)
+
 Draft, additive.
 
 ## Purpose

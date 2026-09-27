@@ -291,6 +291,176 @@ class AuthoritativeDatumDocument:
 
 
 @dataclass(frozen=True)
+class AuthoritativeDatumDocumentSummary:
+    """One catalog document WITHOUT its rows.
+
+    Deliberately duck-type-compatible with :class:`AuthoritativeDatumDocument` on
+    every attribute a metadata consumer reads (``document_id``, ``canonical_name``,
+    ``document_name``, ``source_kind``, ``relative_path``, ``is_anchor``,
+    ``document_metadata``, ``row_count``), because those consumers reach for the
+    fields via ``getattr`` — ``build_publication_index``, ``resolve_sources`` and
+    the workbench document table all work against a summary unchanged.
+
+    Two fields are NOT derived and must be carried, which is the whole point:
+
+    * ``row_count`` — on the full document this is ``len(rows)``, so a rows-free
+      document would report 0 and the document table would show every document as
+      empty.
+    * ``version_hash`` — recomputing it means hashing every row of the document
+      (``build_document_version_identity``), which is the 138 MB read this type
+      exists to avoid. It is carried with its ``version_hash_policy`` so a reader
+      can tell "computed under a policy I do not want" from "absent", and
+      recompute only in that case.
+
+    ``document_metadata`` is deliberately ABSENT rather than empty. Measured on the
+    live corpus it is 7,413,855 of the projection's 7,729,351 bytes — 96%, almost
+    all of it embedded ``reference_geojson`` and ``__filesystem_cache__`` on a
+    handful of registrar documents. Everything else together is ~200 KB. No
+    metadata consumer reads it (the version-identity recompute takes the FULL
+    document, which carries its own), so the field is omitted from the TYPE: code
+    that reaches for it against a summary raises ``AttributeError`` instead of
+    quietly receiving ``{}`` and treating "not carried" as "has none".
+    """
+
+    document_id: str
+    source_kind: str
+    document_name: str
+    relative_path: str
+    canonical_name: str = ""
+    tool_id: str = ""
+    is_anchor: bool = False
+    row_count: int = 0
+    version_hash: str = ""
+    version_hash_policy: str = ""
+    # The document's primary archetype, carried like ``version_hash`` and for the
+    # same reason: deriving it needs the rows this type exists to avoid loading.
+    # Projected at catalog-index rebuild (declared metadata first, else a shape
+    # match against the blob's own archetype library). ``""`` means "not derived"
+    # — a reader draws the generic document glyph, never guesses.
+    archetype: str = ""
+    warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        document_id = _as_text(self.document_id)
+        if not document_id:
+            raise ValueError("authoritative_datum_document_summary.document_id is required")
+        object.__setattr__(self, "document_id", document_id)
+        object.__setattr__(self, "source_kind", _as_text(self.source_kind).lower())
+        object.__setattr__(self, "document_name", _as_text(self.document_name))
+        object.__setattr__(self, "relative_path", _as_text(self.relative_path))
+        object.__setattr__(self, "canonical_name", _as_text(self.canonical_name))
+        object.__setattr__(self, "tool_id", _as_text(self.tool_id))
+        object.__setattr__(self, "is_anchor", bool(self.is_anchor))
+        object.__setattr__(self, "row_count", max(0, int(self.row_count or 0)))
+        object.__setattr__(self, "version_hash", _as_text(self.version_hash))
+        object.__setattr__(self, "version_hash_policy", _as_text(self.version_hash_policy))
+        object.__setattr__(self, "archetype", _as_text(self.archetype))
+        object.__setattr__(
+            self, "warnings", tuple(_as_text(item) for item in self.warnings if _as_text(item))
+        )
+
+    @classmethod
+    def from_document(
+        cls,
+        document: AuthoritativeDatumDocument,
+        *,
+        version_hash: str = "",
+        version_hash_policy: str = "",
+    ) -> AuthoritativeDatumDocumentSummary:
+        metadata = getattr(document, "document_metadata", None)
+        declared = ""
+        if isinstance(metadata, dict):
+            declared = _as_text(metadata.get("archetype")) or _as_text(
+                metadata.get("datum_template_archetype"))
+        return cls(
+            document_id=document.document_id,
+            source_kind=document.source_kind,
+            document_name=document.document_name,
+            relative_path=document.relative_path,
+            canonical_name=document.canonical_name,
+            tool_id=document.tool_id,
+            is_anchor=document.is_anchor,
+            row_count=document.row_count,
+            version_hash=version_hash,
+            version_hash_policy=version_hash_policy,
+            archetype=declared,
+            warnings=document.warnings,
+        )
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "document_id": self.document_id,
+            "source_kind": self.source_kind,
+            "document_name": self.document_name,
+            "relative_path": self.relative_path,
+            "canonical_name": self.canonical_name,
+            "tool_id": self.tool_id,
+            "is_anchor": self.is_anchor,
+            "row_count": self.row_count,
+            "version_hash": self.version_hash,
+            "version_hash_policy": self.version_hash_policy,
+            "archetype": self.archetype,
+            "warnings": list(self.warnings),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> AuthoritativeDatumDocumentSummary:
+        if not isinstance(payload, dict):
+            raise ValueError("authoritative_datum_document_summary must be a dict")
+        warnings = payload.get("warnings") or ()
+        if not isinstance(warnings, (list, tuple)):
+            raise ValueError("authoritative_datum_document_summary.warnings must be a list")
+        return cls(
+            document_id=payload.get("document_id"),
+            source_kind=payload.get("source_kind") or "",
+            document_name=payload.get("document_name") or "",
+            relative_path=payload.get("relative_path") or "",
+            canonical_name=payload.get("canonical_name") or "",
+            tool_id=payload.get("tool_id") or "",
+            is_anchor=bool(payload.get("is_anchor")),
+            row_count=payload.get("row_count") or 0,
+            version_hash=payload.get("version_hash") or "",
+            version_hash_policy=payload.get("version_hash_policy") or "",
+            archetype=payload.get("archetype") or "",
+            warnings=tuple(str(item) for item in warnings),
+        )
+
+
+@dataclass(frozen=True)
+class AuthoritativeDatumDocumentIndexResult:
+    """The rows-free view of a tenant's catalog.
+
+    Mirrors :class:`AuthoritativeDatumDocumentCatalogResult` so a metadata reader
+    can be pointed at either; ``documents`` here are summaries.
+    """
+
+    tenant_id: str
+    documents: tuple[AuthoritativeDatumDocumentSummary, ...] = ()
+    readiness_status: dict[str, JsonValue] | None = None
+    warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        tenant_id = _as_text(self.tenant_id).lower()
+        if not tenant_id:
+            raise ValueError("authoritative_datum_document_index.tenant_id is required")
+        object.__setattr__(self, "tenant_id", tenant_id)
+        object.__setattr__(
+            self,
+            "documents",
+            tuple(
+                document
+                if isinstance(document, AuthoritativeDatumDocumentSummary)
+                else AuthoritativeDatumDocumentSummary.from_dict(document)
+                for document in self.documents
+            ),
+        )
+        object.__setattr__(self, "readiness_status", dict(self.readiness_status or {}))
+        object.__setattr__(
+            self, "warnings", tuple(_as_text(item) for item in self.warnings if _as_text(item))
+        )
+
+
+@dataclass(frozen=True)
 class AuthoritativeDatumDocumentCatalogResult:
     tenant_id: str
     documents: tuple[AuthoritativeDatumDocument | dict[str, Any], ...]

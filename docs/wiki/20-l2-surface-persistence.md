@@ -25,12 +25,12 @@ MOS rules — canonical-only writes, one document per row, MSS form.
 |---|---|---|
 | `micyte/ports/datum_store/contracts.py:123` | `AuthoritativeDatumDocument` — the canonical datum-document value object: `document_id`, `source_kind` (`system_anthology`/`sandbox_source`), `rows`, `anchor_rows`, `tool_id`, `document_metadata`. | 775 |
 | `micyte/ports/datum_store/contracts.py:89` | `AuthoritativeDatumDocumentRow` (`datum_address` + `raw`) — one datum address-line ("Row" in the unit brief) inside a document. | — |
-| `micyte/ports/datum_store/contracts.py:264` | `AuthoritativeDatumDocumentCatalogResult` — the whole-tenant catalog (tuple of documents + `source_files` + `readiness_status`). | — |
-| `micyte/ports/datum_store/contracts.py:717` | `SystemDatumStorePort` — read the system resource workbench surface. | — |
-| `micyte/ports/datum_store/contracts.py:723` | `AuthoritativeDatumDocumentPort` — read authoritative documents. | — |
-| `micyte/ports/datum_store/contracts.py:732` | `AuthoritativeDatumDocumentMutationPort` — adds `read_document_version_identity`, `replace_authoritative_document`, `delete_authoritative_document`. | — |
-| `micyte/ports/datum_store/contracts.py:760` | `PublicationTenantSummaryPort` — read one tenant profile projection. | — |
-| `micyte/ports/datum_store/contracts.py:770` | `PublicationProfileBasicsWritePort` — one bounded profile-basics write with read-after-write confirmation. | — |
+| `micyte/core/datum_documents.py:464` | `AuthoritativeDatumDocumentCatalogResult` — the whole-tenant catalog (tuple of documents + `source_files` + `readiness_status`). | — |
+| `micyte/ports/datum_store/contracts.py:71` | `SystemDatumStorePort` — read the system resource workbench surface. | — |
+| `micyte/ports/datum_store/contracts.py:77` | `AuthoritativeDatumDocumentPort` — read authoritative documents. | — |
+| `micyte/ports/datum_store/contracts.py:116` | `AuthoritativeDatumDocumentMutationPort` — adds `read_document_version_identity`, `replace_authoritative_document`, `delete_authoritative_document`. | — |
+| `micyte/ports/datum_store/contracts.py:144` | `PublicationTenantSummaryPort` — read one tenant profile projection. | — |
+| `micyte/ports/datum_store/contracts.py:153` | `PublicationProfileBasicsWritePort` — one bounded profile-basics write with read-after-write confirmation. | — |
 | `micyte/ports/datum_store/__init__.py:1` | Public re-export surface for the port. | 53 |
 | `micyte/ports/datum_store/README.md:1` | Port README (currently a one-line placeholder). | — |
 
@@ -45,12 +45,12 @@ MOS rules — canonical-only writes, one document per row, MSS form.
 | `micyte/adapters/sql/datum_store.py:580` | `read_authoritative_datum_documents` — cached catalog read + canonical-id projection. | — |
 | `micyte/adapters/sql/datum_store.py:108` | `_GLOBAL_CATALOG_CACHE` — module-level `(db_path, tenant_id) → (mtime_ns, catalog)` cache shared across ephemeral adapter instances; mtime-invalidated, also popped on every write. | — |
 | `micyte/adapters/sql/datum_store.py:45` | `NonCanonicalDocumentIdError` — raised when a write would persist a non-canonical id (unless `allow_legacy_writes`). | — |
-| `micyte/adapters/sql/datum_semantics.py:209` | `build_document_semantics` — the address/hyphae/MSS engine: per-row hyphae chains, semantic hashes, version identity. **Misplaced here** (see Vision-fit). | 663 |
-| `micyte/adapters/sql/datum_semantics.py:136` | `build_document_version_identity` — MSS SHA-256 over the canonicalized row set (`mos.mss_sha256_v1`). | — |
-| `micyte/adapters/sql/datum_semantics.py:474` | `preview_document_insert` / `_delete` (526) / `_move` (587) — pure address-remap mutations consumed by the adapter's apply/preview methods. | — |
+| `micyte/core/datum_semantics/engine.py:346` | `build_document_semantics` — the address/hyphae/MSS engine: per-row hyphae chains, semantic hashes, version identity. **Misplaced here** (see Vision-fit). | 663 |
+| `micyte/core/datum_semantics/engine.py:143` | `build_document_version_identity` — MSS SHA-256 over the canonicalized row set (`mos.mss_sha256_v1`). | — |
+| `micyte/core/datum_semantics/engine.py:577` | `preview_document_insert` / `_delete` (526) / `_move` (587) — pure address-remap mutations consumed by the adapter's apply/preview methods. | — |
 | `micyte/adapters/sql/datum_workbook_apply.py:103` | `execute_migration` — store-bound workbook executor: backup → write-in-order → index → verify → restore-on-failure. | 164 |
 | `micyte/adapters/sql/_sqlite.py:9` | `SCHEMA_SQL` — the full DB schema (snapshot tables + `documents` index + semantics tables + directive-context). | 155 |
-| `micyte/adapters/sql/_sqlite.py:138` | `connect_sqlite` / `open_sqlite` — WAL, `foreign_keys=ON`, idempotent schema bootstrap. | — |
+| `micyte/adapters/sql/_sqlite.py:106` | `connect_sqlite` / `open_sqlite` — WAL, `foreign_keys=ON`, idempotent schema bootstrap. | — |
 | `micyte/adapters/sql/directive_context.py:54` | `SqliteDirectiveContextAdapter` — sibling adapter; shared-shell directive overlays keyed by `(portal_instance_id, tool_id, hyphae_hash, version_hash)`. | 223 |
 | `micyte/adapters/sql/portal_authority.py:23` | `SqlitePortalAuthorityAdapter` — sibling adapter; portal-scope grants / tool-exposure read seam. | 103 |
 
@@ -137,15 +137,17 @@ validated only in `core/document_naming/__init__.py`:
   (`format_canonical_document_id`, `__init__.py:65`; `_LV_RE`, `__init__.py:21`).
 - `stl.<msn_id>.<name>.<hash>` — payload/stored-blob style (no sandbox segment).
 - `cptr.<msn_id>.<name>.<hash>` — cache-pointer style (no sandbox segment).
+- `art.<msn_id>.<name>.<hash>` — an artifact, a file whose rows are its bytes (no
+  sandbox segment; joined 2026-08-23, `datum_ops/artifact.py`).
 
 `<hash>` is the 64-char lowercase SHA-256 over the document's MSS form, produced
 by `build_document_version_identity` (`datum_semantics.py:136`, policy
 `mos.mss_sha256_v1`). The `documents` table CHECK-constrains `prefix IN
-('lv','stl','cptr')` (`_sqlite.py:56`) and stores the parsed `msn_id`, `sandbox`,
+('lv','stl','cptr','art')` (`mos_schema.py`) and stores the parsed `msn_id`, `sandbox`,
 `name`, `version_hash` columns alongside the full `document_id`.
 
 The vision speaks of `<document_type>.<msn_id>.<sandbox>.<name>.<hash>`. Today the
-`<document_type>` slot is exactly these three prefixes (`lv`/`stl`/`cptr`). That
+`<document_type>` slot is exactly these four prefixes (`lv`/`stl`/`cptr`/`art`). That
 reconciliation is captured in `61-mss-and-hyphae-form-spec.md` (forward ref).
 
 ### Sandbox modeling
@@ -257,11 +259,12 @@ authoritative and the disk tree is expected to be empty of datum content.
 
 ### Misplaced (forward ref)
 
-- `adapters/sql/datum_semantics.py` is the address/hyphae/MSS engine, but it imports
+- ~~`adapters/sql/datum_semantics.py` is the address/hyphae/MSS engine, but it imports
   **only** `ports/datum_store` + the pure `dumps_json` helper from `._sqlite`
-  (verified: no SQL/connection use). It is logically L1 CORE, not an SQL adapter. A
-  separate unit relocates it to core — see `60-canonical-datum-and-hyphae-flags.md`
-  (forward ref).
+  (verified: no SQL/connection use). It is logically L1 CORE, not an SQL adapter.~~
+  **Relocated:** the engine lives at `micyte/core/datum_semantics/engine.py`; the
+  adapter-path shim that re-exported it was removed 2026-09-10 — see
+  `60-canonical-datum-and-hyphae-flags.md`.
 
 ## Open questions
 

@@ -51,6 +51,43 @@ NODE_REF_MARKERS = frozenset({
 })
 
 
+#: The logical FIELDS whose magnitude is a node-id reference. Namespaces disagree about
+#: which ADDRESS carries each, which is the whole reason this is a field list and not an
+#: address list.
+_NODE_REF_FIELDS = ("txa_id", "lcl_id")
+
+
+def node_ref_markers_for(namespace: str) -> frozenset[str]:
+    """The node-reference markers OF ONE NAMESPACE, derived from the field registry.
+
+    :data:`NODE_REF_MARKERS` is the UNION of three namespaces' answers, and using it
+    everywhere is a real defect with a measured size. `rf.3-1-1` is ``txa_id`` in `farm`
+    and `taxonomy` — but ``coordinate`` in `registrar` and `archetype`, and ``utc`` in
+    `system`. MEASURED across the live store on 2026-09-01, the union made the reference
+    check report **162,249 dangling references out of 163,643 edges — a 99.1% false
+    positive rate**, 162,102 of them `rf.3-1-1` cells holding coordinates and timestamps
+    that merely look like multi-segment addresses.
+
+    That is not a reporting nuisance: reference existence is a HARD check, and
+    `datum_workbook_apply._verify` turns `check_step`'s hard list into failures that REFUSE
+    the write. Any workbook touching a registrar or agnet document was gated by a check
+    that could not read its namespace.
+
+    DERIVED, not tabulated. Asking the registry which address carries `txa_id` and `lcl_id`
+    in this namespace means a namespace that renumbers a field cannot leave a stale copy
+    here — the defect this function exists to end, one level up.
+    """
+    out: set[str] = set()
+    for field_name in _NODE_REF_FIELDS:
+        try:
+            out.add(_fr.marker(namespace, field_name))
+        except Exception:
+            # A namespace that does not define the field has no marker for it, which is
+            # an answer rather than an error: `registrar` has no `txa_id` at all.
+            continue
+    return frozenset(out)
+
+
 def is_reference_marker(token: object) -> bool:
     """True for any ``rf.``/``ref.`` value-typing marker (used for pair structure)."""
     return bool(_MARKER_RE.fullmatch(as_text(token)))
@@ -99,6 +136,27 @@ def _is_definition_head(head: list[Any]) -> bool:
     if len(head) >= 5:
         return is_title_blob(head[4])  # second pair is a title → this row defines head[2]
     return True  # bare id pair [self, marker, node]
+
+
+def _head_edges(head: list[Any], markers: frozenset[str] = NODE_REF_MARKERS):
+    """Every node-address reference in one row head, as ``(slot, marker, target)``.
+
+    The pair-walk rule lives here once. A row head is ``[self_address] + pairs``, so
+    the markers sit at odd indices and their magnitudes one slot on; a definition
+    row's FIRST pair is its own id and is not an outbound edge.
+
+    ``markers`` is THE NAMESPACE'S set — see :func:`node_ref_markers_for` for why the
+    union is wrong and what it measured. It defaults to the union so a caller that has no
+    namespace to offer behaves exactly as before rather than silently checking nothing.
+    """
+    definition = _is_definition_head(head)
+    for i in range(1, len(head) - 1, 2):
+        if definition and i == 1:
+            continue  # the id-pair defines this row's node; not an outbound edge
+        marker = as_text(head[i])
+        value = as_text(head[i + 1])
+        if is_node_ref_marker(marker, markers) and is_node_addr_reference(value):
+            yield i + 1, marker, value
 
 
 @dataclass(frozen=True)
@@ -156,8 +214,50 @@ def defined_node_addrs(doc: Any) -> set[str]:
     return out
 
 
-def build_reference_index(workbook: Workbook) -> ReferenceIndex:
-    """Walk every sheet/row, recording defined nodes and cross-reference edges."""
+def workbook_msn(workbook: Workbook) -> str:
+    """The instance a workbook's sheets belong to, read off a document id.
+
+    A sandbox is addressed by (msn_id, sandbox) — eight instances hold one called `pim`
+    and four hold `system` — so the sandbox NAME alone cannot resolve a namespace. The
+    documents say whose they are (``lv.<msn>.<sandbox>.<name>.<hash>``), which is the
+    honest source: the workbook is told nothing it does not already carry.
+    """
+    for sheet_name in workbook.names():
+        parts = as_text(getattr(workbook.sheet(sheet_name), "document_id", "")).split(".")
+        if len(parts) > 2 and parts[0] in ("lv", "st", "stl"):
+            return parts[1]
+    return ""
+
+
+def markers_for_workbook(workbook: Workbook) -> tuple[frozenset[str], str]:
+    """``(markers, why_not)`` — the node-ref markers this workbook's namespace defines.
+
+    ``why_not`` is empty when the namespace resolved. When it did NOT, the markers fall
+    back to the union and the reason is returned rather than swallowed, because the two
+    outcomes are not the same check: a namespace-resolved run measures references, and a
+    fallback run measures references PLUS every coordinate and timestamp that looks like
+    one. `check_step` reports that as an advisory so a reader can tell which they got.
+    """
+    sandbox = as_text(getattr(workbook, "sandbox", ""))
+    if not sandbox:
+        return NODE_REF_MARKERS, "the workbook names no sandbox"
+    try:
+        namespace = _fr.namespace_for_sandbox(sandbox, msn_id=workbook_msn(workbook))
+    except Exception as exc:
+        return NODE_REF_MARKERS, f"no namespace for sandbox {sandbox!r}: {exc}"
+    return node_ref_markers_for(namespace), ""
+
+
+def build_reference_index(workbook: Workbook,
+                          markers: frozenset[str] | None = None) -> ReferenceIndex:
+    """Walk every sheet/row, recording defined nodes and cross-reference edges.
+
+    ``markers`` is the namespace's node-ref set; ``None`` resolves it from the workbook.
+    See :func:`node_ref_markers_for` for what the union costs — 99.1% false positives
+    across the live store, on a check that REFUSES writes.
+    """
+    if markers is None:
+        markers, _why = markers_for_workbook(workbook)
     index = ReferenceIndex()
     for sheet_name in workbook.names():
         doc = workbook.sheet(sheet_name)
@@ -165,19 +265,75 @@ def build_reference_index(workbook: Workbook) -> ReferenceIndex:
             head = _head(row.raw)
             if head is None:
                 continue
-            definition = _is_definition_head(head)
-            if definition:
+            if _is_definition_head(head):
                 node = as_text(head[2])
                 # First definition wins (mirrors title_to_node.setdefault in the ingest resolver).
                 index.defined.setdefault(node, DefinedNode(sheet=sheet_name, row=row.datum_address, node_addr=node))
-            # Walk pairs: (marker @ i, magnitude @ i+1) for odd i.
-            for i in range(1, len(head) - 1, 2):
-                if definition and i == 1:
-                    continue  # the id-pair defines this row's node; not an outbound edge
-                marker = as_text(head[i])
-                value = as_text(head[i + 1])
-                if is_node_ref_marker(marker) and is_node_addr_reference(value):
-                    index.edges.append(
-                        Edge(src_sheet=sheet_name, src_row=row.datum_address, slot=i + 1, marker=marker, target_node_addr=value)
-                    )
+            for slot, marker, value in _head_edges(head, markers):
+                index.edges.append(
+                    Edge(src_sheet=sheet_name, src_row=row.datum_address, slot=slot, marker=marker, target_node_addr=value)
+                )
     return index
+
+
+@dataclass(frozen=True)
+class InboundReference:
+    """One row, in some other document, that references a node address."""
+
+    document_id: str
+    document_name: str
+    datum_address: str
+    marker: str
+    target_node_addr: str
+
+
+def inbound_references(
+    documents: Any,
+    *,
+    defined: set[str],
+    exclude_document_id: str = "",
+    limit: int = 0,
+) -> tuple[int, list[InboundReference]]:
+    """Rows that reference any address in ``defined``, excluding one document's own.
+
+    The question a *deletion* has to answer and a rename does not. Renaming a document
+    moves neither its node addresses nor its hash, so nothing that references it
+    notices; deleting it removes the definitions outright, and
+    :func:`~micyte.core.datum_ops.rules_loop.check_step` then reports every such row as
+    a dangling ref and HARD-fails any workbook apply on that sandbox.
+
+    Matching is exact, not by descent: ``defined`` is what this document itself
+    defines, and a child address is somebody else's node.
+
+    Returns ``(total, sample)`` — the count is complete even when ``limit`` truncates
+    the sample, because "12 rows in 3 documents" is the number the operator decides on.
+    """
+    if not defined:
+        return 0, []
+    skip = as_text(exclude_document_id)
+    total = 0
+    sample: list[InboundReference] = []
+    for document in documents:
+        if as_text(getattr(document, "document_id", "")) == skip:
+            continue
+        for row in getattr(document, "rows", ()):
+            head = _head(row.raw)
+            if head is None:
+                continue
+            for _slot, marker, value in _head_edges(head):
+                if value not in defined:
+                    continue
+                total += 1
+                if limit and len(sample) >= limit:
+                    continue
+                sample.append(
+                    InboundReference(
+                        document_id=as_text(document.document_id),
+                        document_name=as_text(getattr(document, "canonical_name", ""))
+                        or as_text(getattr(document, "document_name", "")),
+                        datum_address=as_text(row.datum_address),
+                        marker=marker,
+                        target_node_addr=value,
+                    )
+                )
+    return total, sample

@@ -18,11 +18,13 @@ from micyte.state_machine.portal_shell.shell_schemas import WORKBENCH_UI_TOOL_RO
 
 from ._archetype import read_sandbox_catalog, resolve_tool_sandbox
 from ._registry import register
+from ._requirements import REGISTRAR
 from ._shared.utilities import as_text as _as_text
 from .network_map_viewer import (
     _CLASS_ORDER,
     ENTITY_CLASS_STYLES,
     build_network_map_payload,
+    section_view,
 )
 
 _TENANT_DEFAULT = "fnd"
@@ -145,6 +147,9 @@ class EntityProfileTable:
     summary = "Network entity profiles grouped by class, with facet filters and search."
     route = WORKBENCH_UI_TOOL_ROUTE
     # Embedded-only pane (composed into the NETWORK tab) — out of the menubar palette.
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = REGISTRAR
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -152,14 +157,33 @@ class EntityProfileTable:
     def build_panel_payload(
         self, *, authority_db_file: Path | None, sandbox_id: str, document_id: str,
         datum_address: str, extra_query: dict[str, Any] | None = None,
+        network_base: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        """``network_base`` lets a composer hand over a map base it has already built.
+
+        The table is a view of the same payload the map beside it renders, so rebuilding it
+        here was the second of six identical builds in one agronomics request.
+
+        Both branches end at the same guard. The handed-over base carries the sandbox its
+        composer resolved, so this path needs no second catalog read — but it must still refuse
+        to render on an unresolved sandbox, exactly as the self-building path does. The table's
+        create/edit routes are keyed to that sandbox, so rendering without one emits actions
+        pointed at nothing.
+        """
+        section = _as_text((extra_query or {}).get("network_section")) or None
+        if network_base is not None:
+            sandbox = _as_text(network_base.get("sandbox_id")) or resolve_tool_sandbox(sandbox_id)
+            if not sandbox:
+                return _notice("no sandbox specified")
+            return build_entity_table_from_net(
+                section_view(network_base, section), sandbox_id=sandbox)
+        # The network payload is built from the registrar's documents (2026-09-25).
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox="registrar")
         if err:
             return _notice(err)
         sandbox = resolve_tool_sandbox(sandbox_id, docs=docs)
         if not sandbox:
             return _notice("no sandbox specified")
-        section = _as_text((extra_query or {}).get("network_section")) or None
         net = build_network_map_payload(
             docs, sandbox_id=sandbox, section=section)
         return build_entity_table_from_net(net, sandbox_id=sandbox)

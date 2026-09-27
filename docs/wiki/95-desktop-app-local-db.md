@@ -62,7 +62,7 @@ The schema is self-materializing. Opening any DB path creates the parent
 directory and runs the schema script, so a *brand-new file* becomes a valid MOS
 authority on first open — exactly what a fresh desktop install needs:
 
-- `micyte/adapters/sql/_sqlite.py:138` — `connect_sqlite()` does
+- `micyte/adapters/sql/_sqlite.py:106` — `connect_sqlite()` does
   `path.parent.mkdir(parents=True, exist_ok=True)`, `PRAGMA foreign_keys = ON`,
   `PRAGMA journal_mode = WAL`, then `executescript(SCHEMA_SQL)`.
 - The full MOS schema (`documents`, `datum_*_semantics`,
@@ -168,7 +168,7 @@ become priorities.
 The shell picks a per-user, writable, app-private path (e.g. an OS app-data
 directory) and passes it as `authority_db_file`. Because `connect_sqlite()`
 auto-creates the file, directory, and schema
-(`micyte/adapters/sql/_sqlite.py:138`), first launch needs no
+(`micyte/adapters/sql/_sqlite.py:106`), first launch needs no
 migration step — the empty file *becomes* a valid MOS. The same datum/MOS rules,
 canonical-id posture, and L2 surface persistence apply unchanged
 (see [`20-l2-surface-persistence.md`](20-l2-surface-persistence.md)).

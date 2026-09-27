@@ -41,6 +41,11 @@ from micyte.core.datum_documents import (
     AuthoritativeDatumDocumentRow,
 )
 
+#: A template's ``sandbox`` value meaning "available in every sandbox". Used by
+#: the standard document shapes, which describe a document KIND rather than one
+#: tenant's ingest and are therefore not bound to a single anchor.
+PORTABLE_SANDBOX = "*"
+
 _DATUM_TEMPLATE_SCHEMA = "mycite.v2.core.datum_template.v1"
 _ARCHETYPE_REPORT_SCHEMA = "mycite.v2.core.datum_template.archetype_report.v1"
 # Package-relative on purpose. This was parents[3]/"data"/"datum_templates" —
@@ -101,6 +106,12 @@ class DatumTemplate:
     schema: str
     sandbox: str
     archetype: str
+    #: Which INSTANCE this template belongs to, when it belongs to one. A sandbox name
+    #: stopped identifying a sandbox on 2026-08-14 — four instances keep their core one
+    #: under the name `system` — so `sandbox: system` alone would offer one farm's
+    #: taxonomy template on every instance's picker. Blank means "any instance holding
+    #: that sandbox", which is still right for a sandbox only one instance has.
+    msn_id: str = ""
     header_rows: tuple[HeaderRowSpec, ...] = ()
     repeating_archetype: RepeatingArchetypeSpec | None = None
     csv_column_map: dict[str, str] = field(default_factory=dict)
@@ -113,6 +124,7 @@ class DatumTemplate:
             "template_id": self.template_id,
             "datum_schema": self.schema,
             "sandbox": self.sandbox,
+            "msn_id": self.msn_id,
             "archetype": self.archetype,
             "description": self.description,
             "header_rows": [
@@ -197,6 +209,39 @@ class TemplateRegistry:
     def all(self) -> list[DatumTemplate]:
         return list(self._templates.values())
 
+    def for_sandbox(self, sandbox: str, *, msn_id: str = "") -> list[DatumTemplate]:
+        """Templates a given ``(msn_id, sandbox)`` may scaffold from.
+
+        A template declaring ``sandbox: "*"`` is PORTABLE — a standard document
+        shape (contacts, events, a record log) that means the same thing wherever
+        it is used. The tenant-specific ones stay bound to the sandbox they were
+        written for, because their header rows and column maps encode that
+        sandbox's anchor.
+
+        A template that also declares an ``msn_id`` is bound to ONE INSTANCE, and is
+        offered only there. That became necessary when every instance's core sandbox
+        took the same name: bound to `system` alone, a farm's taxonomy template would be
+        offered on the registrar's picker and on every other farm's — and its header rows
+        encode an anchor those instances do not have.
+
+        ``msn_id=""`` from the caller means "not asking about an instance", which still
+        offers instance-bound templates. That keeps a script or a test that names only a
+        sandbox working; the SURFACE always knows whose request it is serving.
+
+        The single place the wildcard and the binding are interpreted, so the picker that
+        offers a template and the write path that accepts one cannot disagree.
+        """
+        token = _as_text(sandbox)
+        if not token:
+            return []
+        wanted = _as_text(msn_id)
+        return [
+            template
+            for template in self._templates.values()
+            if (template.sandbox == token or template.sandbox == PORTABLE_SANDBOX)
+            and (not template.msn_id or not wanted or template.msn_id == wanted)
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Recognition
@@ -272,6 +317,7 @@ def scaffold_from_template(
     relative_path: str,
     canonical_name: str = "",
     context: Mapping[str, Any] | None = None,
+    sandbox: str = "",
 ) -> AuthoritativeDatumDocument:
     """Produce an empty datum document with the template's header rows.
 
@@ -303,7 +349,12 @@ def scaffold_from_template(
         document_name=document_name,
         relative_path=relative_path,
         canonical_name=canonical_name or template.template_id,
-        tool_id=template.sandbox,
+        # The sandbox the document is actually being CREATED in. For a portable
+        # template ``template.sandbox`` is the ``*`` wildcard, which is a rule about
+        # who may use the template and not a place any document lives — writing it
+        # into tool_id would stamp every standard document with a sandbox token
+        # that resolves to nothing.
+        tool_id=_as_text(sandbox) or template.sandbox,
         is_anchor=False,
         rows=rows,
         document_metadata=metadata,
@@ -401,6 +452,7 @@ def _load_template_file(path: Path) -> DatumTemplate | None:
         template_id=template_id,
         schema=schema,
         sandbox=sandbox,
+        msn_id=_as_text(payload.get("msn_id")),
         archetype=archetype,
         header_rows=header_rows,
         repeating_archetype=repeating,
@@ -411,6 +463,7 @@ def _load_template_file(path: Path) -> DatumTemplate | None:
 
 
 __all__ = [
+    "PORTABLE_SANDBOX",
     "DatumTemplate",
     "DocumentArchetypeReport",
     "HeaderRowSpec",

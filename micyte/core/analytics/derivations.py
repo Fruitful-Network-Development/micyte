@@ -13,6 +13,11 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+# event_schema imports nothing from here (its bot_detection import is lazy), so
+# this direction is the acyclic one — same rule as leaflet_model importing the
+# conversion sets from this module and never the reverse.
+from .event_schema import _iso_to_epoch_ms
+
 # Default sessionization gap: a visitor is in the same session as
 # long as consecutive events are within this many ms.
 DEFAULT_INACTIVITY_GAP_MS = 30 * 60 * 1000
@@ -172,6 +177,11 @@ def _summarize_session(
         ),
         "referrer_domain": first.get("referrer_domain") or "",
         "event_types": sorted({e.get("event_type") or "" for e in events}),
+        # Standardized actions seen in the session. Carried beside event_types
+        # because a conversion is decided by BOTH (see event_is_conversion) —
+        # without this, a booking_click read as "not converted" here while the
+        # leaflet's own session_summary read it as converted.
+        "actions": sorted({e.get("action") or "" for e in events if e.get("action")}),
         "is_bot": any(e.get("is_bot") for e in events),
         "is_bounce": page_view_count <= 1 and len(events) <= 2,
     }
@@ -191,28 +201,121 @@ def classify_origin(referrer_domain: str, utm_source: str = "") -> str:
     domain = (referrer_domain or "").lower().strip()
     if not domain:
         return "direct"
-    if any(s in domain for s in ("google.", "bing.", "duckduckgo.", "yahoo.")):
+    # Resolved against the SAME tables the provider label uses, rather than a
+    # second copy of the needles. The copy had already drifted: it carried no
+    # `t.co`, `fb.`, `pinterest.` or `nextdoor.`, so a t.co referral was labelled
+    # "X" by `_provider_for` and typed "referral" here — one visit, two answers.
+    if _provider_for(domain, _SEARCH_PROVIDERS):
         return "search"
-    if any(
-        s in domain
-        for s in (
-            "facebook.",
-            "twitter.",
-            "x.com",
-            "instagram.",
-            "tiktok.",
-            "linkedin.",
-            "reddit.",
-            "youtube.",
-        )
-    ):
+    if _provider_for(domain, _SOCIAL_PROVIDERS):
         return "social"
-    if "mail." in domain or "gmail." in domain or "outlook." in domain:
+    if _provider_for(domain, _EMAIL_PROVIDERS):
         return "email"
     # An internal jump shows the same domain as the page being viewed,
     # but at this layer we don't have the page's domain — caller can
     # post-process. Default to referral.
     return "referral"
+
+
+# Named providers, so a session reads "Google" rather than "www.google.com" and
+# "Instagram" rather than "l.instagram.com" (Instagram's link shim, which is
+# what 206 of the 253 social sessions in the store actually carry).
+_SEARCH_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("google.", "Google"), ("bing.", "Bing"), ("duckduckgo.", "DuckDuckGo"),
+    ("yahoo.", "Yahoo"), ("ecosia.", "Ecosia"), ("brave.", "Brave Search"),
+    ("baidu.", "Baidu"), ("yandex.", "Yandex"), ("startpage.", "Startpage"),
+)
+_SOCIAL_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("instagram.", "Instagram"), ("facebook.", "Facebook"), ("fb.", "Facebook"),
+    ("twitter.", "X"), ("x.com", "X"), ("linkedin.", "LinkedIn"),
+    ("pinterest.", "Pinterest"), ("tiktok.", "TikTok"), ("reddit.", "Reddit"),
+    ("youtube.", "YouTube"), ("t.co", "X"), ("nextdoor.", "Nextdoor"),
+)
+_EMAIL_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("mail.", "Email"), ("gmail.", "Gmail"), ("outlook.", "Outlook"),
+)
+
+
+def _provider_for(domain: str, table: tuple[tuple[str, str], ...]) -> str:
+    """The provider a referrer host belongs to, matched on HOST BOUNDARIES.
+
+    Never a bare substring. ``"t.co" in "target.com"`` is true, and so is
+    ``"x.com" in "fedex.com"``, ``"x.com" in "phoenix.com"`` and
+    ``"fb." in "wolfb.co"`` — so ordinary third-party referrers were reported as
+    social traffic and grouped under "social" in the Came-from filter.
+
+    Two needle shapes, both anchored:
+
+    * ``"google."`` — a LABEL. Matches when some label of the host is exactly
+      ``google``, so ``www.google.com``, ``google.co.uk`` and Instagram's
+      ``l.instagram.com`` shim all resolve, and ``mygoogle.com`` does not.
+    * ``"x.com"`` — a registrable DOMAIN. Matches that host or a subdomain of it,
+      so ``x.com`` and ``mobile.x.com`` resolve, and ``phoenix.com`` does not.
+    """
+    host = (domain or "").strip().lower().rstrip(".")
+    if not host:
+        return ""
+    labels = host.split(".")
+    for needle, name in table:
+        if needle.endswith("."):
+            if needle[:-1] in labels:
+                return name
+        elif host == needle or host.endswith("." + needle):
+            return name
+    return ""
+
+
+def classify_arrival(
+    routed_from: dict[str, Any],
+    *,
+    own_domains: Iterable[str] = (),
+    shared_by_label: str = "",
+    campaign_label: str = "",
+) -> dict[str, Any]:
+    """Answer ONE question about a session: where did this visit come from?
+
+    ``origin_type`` + ``referrer_domain`` are two half-answers that the reader
+    has to combine — and they combine WRONGLY for the commonest case, because
+    ``classify_origin`` cannot see the site's own domain and so calls a jump
+    between two pages of the same site a "referral" (300 sessions in the live
+    store). This resolves the whole question once, in priority order:
+
+    * ``shared_link`` — a person forwarded a link. ``?fnd_ref`` carried their
+      share id and it resolved to a visitor we know. This is the only kind that
+      names a PERSON, and it is deliberately first: "Visitor 7 sent this" is a
+      more specific fact than "came from Instagram", and both can be true.
+    * ``campaign`` — arrived through a tracked link or QR the operator minted.
+    * ``search`` / ``social`` — named provider, not a hostname.
+    * ``internal`` — the referrer IS this site. Not a referral.
+    * ``referral`` — a genuine third-party site.
+    * ``direct`` — no referrer at all.
+
+    Pure. ``shared_by_label`` / ``campaign_label`` are resolved by the caller
+    (they need the visitor set and the campaign registry); this function decides
+    which of them WINS.
+    """
+    routed = routed_from or {}
+    domain = str(routed.get("referrer_domain") or "").lower().strip()
+    own = {str(d).lower().strip().removeprefix("www.") for d in own_domains if d}
+
+    if shared_by_label:
+        return {"kind": "shared_link", "label": shared_by_label,
+                "detail": "arrived through a link this visitor shared"}
+    if campaign_label:
+        return {"kind": "campaign", "label": campaign_label,
+                "detail": str(routed.get("campaign_token") or "")}
+    if not domain:
+        return {"kind": "direct", "label": "Direct", "detail": ""}
+
+    provider = _provider_for(domain, _SEARCH_PROVIDERS)
+    if provider:
+        return {"kind": "search", "label": provider, "detail": domain}
+    provider = _provider_for(domain, _SOCIAL_PROVIDERS)
+    if provider:
+        return {"kind": "social", "label": provider, "detail": domain}
+    if own and domain.removeprefix("www.") in own:
+        return {"kind": "internal", "label": "Another page here", "detail": domain}
+    return {"kind": "referral", "label": domain, "detail": domain}
 
 
 # ---------------------------------------------------------------------
@@ -505,11 +608,24 @@ def detect_vpn_geo_jumps(
 INTENT_PATH_NEEDLES: tuple[str, ...] = (
     "/pricing", "/contact", "/donate", "/subscribe", "/book", "/quote",
 )
-CONVERSION_EVENT_TYPES: frozenset[str] = frozenset(
-    {"form_submit", "outbound_click", "download"}
-)
+# A CONVERSION is the visitor asking the site's owner for something — a form
+# reaching the server, a booking, a completed checkout. It is NOT any strong
+# signal whatsoever.
+#
+# ``outbound_click`` and ``download`` used to live in here, which made clicking
+# an Instagram icon or a map link a "conversion": 138 of the 243 conversions in
+# the store were a bare outbound click, and the number meant nothing as a
+# result. They are real interest, so they became ENGAGEMENT — reported beside
+# conversion, never as it.
+CONVERSION_EVENT_TYPES: frozenset[str] = frozenset({"form_submit"})
 CONVERSION_ACTIONS: frozenset[str] = frozenset(
     {"contact_form_submit", "newsletter_signup", "booking_click", "checkout_complete"}
+)
+# Deliberate interaction that is not a request TO the owner. Feeds the
+# session_summary ``engaged`` flag.
+ENGAGEMENT_EVENT_TYPES: frozenset[str] = frozenset({"outbound_click", "download"})
+ENGAGEMENT_ACTIONS: frozenset[str] = frozenset(
+    {"outbound_click", "download_file", "email_click", "phone_click", "checkout_start"}
 )
 HIGH_INTENT_ACTIONS: frozenset[str] = frozenset(
     {"phone_click", "email_click", "checkout_start", "booking_click"}
@@ -517,6 +633,117 @@ HIGH_INTENT_ACTIONS: frozenset[str] = frozenset(
 
 DEFAULT_CONVERSION_EVENT_TYPES: tuple[str, ...] = tuple(sorted(CONVERSION_EVENT_TYPES))
 DEFAULT_INTENT_PATHS: tuple[str, ...] = INTENT_PATH_NEEDLES
+
+
+def event_is_conversion(
+    event: dict[str, Any],
+    *,
+    conversion_event_types: Iterable[str] = CONVERSION_EVENT_TYPES,
+) -> bool:
+    """One predicate for "did this event convert".
+
+    The event TYPE and the standardized ACTION are two views of the same fact
+    and both have to be consulted, or the widgets here and the session_summary
+    in ``leaflet_model`` disagree about the same session — which is exactly what
+    happened while the type check lived in three places and the action check in
+    a fourth.
+    """
+    return (
+        (event.get("event_type") or "") in set(conversion_event_types)
+        or (event.get("action") or "") in CONVERSION_ACTIONS
+    )
+
+
+def event_is_engagement(event: dict[str, Any]) -> bool:
+    """Deliberate interaction short of a conversion. See ENGAGEMENT_*."""
+    return (
+        (event.get("event_type") or "") in ENGAGEMENT_EVENT_TYPES
+        or (event.get("action") or "") in ENGAGEMENT_ACTIONS
+    )
+
+
+# A visit is what a person would call "the time I was on the site". A SESSION is
+# narrower than that by construction: the collector keeps its session id in
+# sessionStorage, which is per-TAB, so opening a second tab starts a second
+# session; a 30-minute idle gap starts another; and arriving through a tracked
+# link (?fnd_c) or a shared link (?fnd_ref) deliberately starts a fresh one so
+# the campaign gets its own attribution. All three are correct for attribution
+# and all three fragment the operator's view of one continuous visit.
+VISIT_GAP_MS = 30 * 60 * 1000
+
+
+def group_sessions_into_visits(
+    sessions: Iterable[dict[str, Any]],
+    *,
+    gap_ms: int = VISIT_GAP_MS,
+) -> list[dict[str, Any]]:
+    """Fold one visitor's leaflet sessions into visits.
+
+    Sessions whose spans overlap, or which begin within ``gap_ms`` of the
+    running end of the visit so far, join that visit. Pure: no clock, no I/O,
+    input order irrelevant (sessions are sorted by start here).
+
+    The returned visit keeps the SESSIONS intact rather than merging their
+    events — the fragmentation is real and worth being able to see, so the
+    dashboard collapses it by default and can still expand it.
+    """
+    ordered = sorted(
+        (s for s in sessions if isinstance(s, dict)),
+        key=lambda s: str(s.get("started_at") or ""),
+    )
+    visits: list[dict[str, Any]] = []
+    for session in ordered:
+        start_ms = _iso_to_epoch_ms(str(session.get("started_at") or ""))
+        parsed_end = _iso_to_epoch_ms(str(session.get("ended_at") or ""))
+        # `is None`, not `or`: _iso_to_epoch_ms returns None for a parse failure
+        # and 0 for a genuine epoch-zero stamp, and collapsing the two is the
+        # exact bug its docstring warns about.
+        end_ms = start_ms if parsed_end is None else parsed_end
+        current = visits[-1] if visits else None
+        # A session with an unparsable timestamp can't be placed on the
+        # timeline; give it its own visit rather than silently gluing it to
+        # whatever happens to be last.
+        joins = (
+            current is not None
+            and start_ms is not None
+            and current["_end_ms"] is not None
+            and start_ms - current["_end_ms"] <= gap_ms
+        )
+        if joins and current is not None:
+            current["sessions"].append(session)
+            current["ended_at"] = max(
+                str(current["ended_at"]), str(session.get("ended_at") or "")
+            )
+            if end_ms is not None:
+                current["_end_ms"] = max(current["_end_ms"], end_ms)
+        else:
+            visits.append(
+                {
+                    "visit_id": str(session.get("session_id") or f"visit_{len(visits) + 1}"),
+                    "started_at": str(session.get("started_at") or ""),
+                    "ended_at": str(session.get("ended_at") or session.get("started_at") or ""),
+                    "sessions": [session],
+                    "_end_ms": end_ms,
+                }
+            )
+
+    for index, visit in enumerate(visits, start=1):
+        visit.pop("_end_ms", None)
+        visit["visit_index"] = index
+        visit["session_count"] = len(visit["sessions"])
+        summaries = [s.get("session_summary") or {} for s in visit["sessions"]]
+        visit["page_view_count"] = sum(int(x.get("page_view_count") or 0) for x in summaries)
+        visit["active_time_ms"] = sum(int(x.get("active_time_ms") or 0) for x in summaries)
+        visit["event_count"] = sum(len(s.get("events") or []) for s in visit["sessions"])
+        visit["converted"] = any(bool(x.get("converted")) for x in summaries)
+        visit["engaged"] = any(bool(x.get("engaged")) for x in summaries)
+        # Entry is the first session's entry, exit the last session's exit —
+        # the visit's real first and last page.
+        visit["entry_page"] = str(summaries[0].get("entry_page") or "") if summaries else ""
+        visit["exit_page"] = str(summaries[-1].get("exit_page") or "") if summaries else ""
+        first_routed = visit["sessions"][0].get("routed_from") or {}
+        visit["routed_from"] = dict(first_routed)
+    return visits
 
 
 def path_touches_intent(path: str) -> bool:
@@ -596,7 +823,7 @@ def visitor_summary(
         if prefix:
             prefix_set.add(prefix)
         total_active += int(ev.get("active_time_ms") or 0)
-        if ev.get("event_type") in conversion_event_types:
+        if event_is_conversion(ev, conversion_event_types=conversion_event_types):
             conversion_count += 1
         if ev.get("is_bot"):
             bot_any = True
@@ -733,7 +960,8 @@ def abandoned_intent_sessions(
         if not visited_intent:
             continue
         event_types = set(session.get("event_types") or [])
-        if event_types & set(conversion_event_types):
+        actions = set(session.get("actions") or [])
+        if (event_types & set(conversion_event_types)) or (actions & CONVERSION_ACTIONS):
             continue  # converted — not abandoned
         out.append(
             {
@@ -835,7 +1063,7 @@ def conversion_assisting_pages(
     for evs in by_session.values():
         evs.sort(key=lambda e: e.get("occurred_at_utc") or "")
         for i, ev in enumerate(evs):
-            if ev.get("event_type") not in conversion_event_types:
+            if not event_is_conversion(ev, conversion_event_types=conversion_event_types):
                 continue
             window = evs[max(0, i - lookback) : i]
             seen: set[str] = set()
@@ -915,8 +1143,11 @@ __all__ = [
     "DEFAULT_INACTIVITY_GAP_MS",
     "DEFAULT_INTENT_PATHS",
     "DEFAULT_INTEREST_CATEGORIES",
+    "ENGAGEMENT_ACTIONS",
+    "ENGAGEMENT_EVENT_TYPES",
     "HIGH_INTENT_ACTIONS",
     "INTENT_PATH_NEEDLES",
+    "VISIT_GAP_MS",
     "abandoned_intent_sessions",
     "classify_origin",
     "conversion_assisting_pages",
@@ -924,8 +1155,11 @@ __all__ = [
     "count_visitors",
     "dead_end_pages",
     "detect_vpn_geo_jumps",
+    "event_is_conversion",
+    "event_is_engagement",
     "filter_bots",
     "find_common_paths",
+    "group_sessions_into_visits",
     "high_intent_sessions",
     "path_touches_intent",
     "rank_pages_by_attention",

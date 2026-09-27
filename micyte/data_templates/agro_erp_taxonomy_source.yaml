@@ -1,6 +1,10 @@
 template_id: agro_erp_taxonomy_source
 schema: mycite.v2.datum.agro_erp.taxonomy_source.v1
-sandbox: example_farm
+sandbox: system
+# Bound to one farm INSTANCE, not just to a sandbox name: every instance keeps its
+# core sandbox under the name `system`, and this template's header rows encode
+# that farm's anchor. Without the msn the picker would offer it everywhere.
+msn_id: 3-2-3-17-77-2-6-3-1-6
 archetype: agro_erp_taxonomy_row
 description: >
   Taxonomy source for the agro_erp sandbox. Each repeating row in
@@ -19,7 +23,7 @@ header_rows:
     raw: "mycite.v2.datum.agro_erp.taxonomy_source.v1"
   - address: "0-0-2"
     field: sandbox
-    raw: "example_farm"
+    raw: "system"
   - address: "0-0-3"
     field: msn_id
     raw: "{{msn_id}}"

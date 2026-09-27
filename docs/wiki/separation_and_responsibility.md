@@ -1,5 +1,9 @@
 # Separation And Responsibility
 
+> Status: as-built
+>
+> [← Overview](00-overview-and-glossary.md)
+
 ## Purpose
 
 Explain how MiCyte fits with the host-infrastructure layer, the served-assets

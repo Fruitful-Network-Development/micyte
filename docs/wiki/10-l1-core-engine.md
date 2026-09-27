@@ -53,7 +53,7 @@ load → edit → compile → plan → apply round-trip.
 | path:line | role | approx LOC |
 |---|---|---|
 | `micyte/core/mss/datum_identity.py:101` | `compute_mss_hash` — deterministic SHA-256 over sorted rows (the version identity) | 177 |
-| `micyte/core/mss/datum_identity.py:126` | `derive_hyphae_chain` — the `0-0-*` rudi closure for a datum address | — |
+| `micyte/core/mss/datum_identity.py:55` | `derive_hyphae_chain` — the `0-0-*` rudi closure for a datum address | — |
 | `micyte/core/mss/canonicalization.py:50` | `canonicalize_iteration_addresses` / `canonicalize_value_group_ordering` — pre-hash row-order invariants | 122 |
 | `micyte/core/mss/__init__.py:1` | re-exports `compute_mss_hash`, `derive_hyphae_chain`, the canonicalizers | 12 |
 

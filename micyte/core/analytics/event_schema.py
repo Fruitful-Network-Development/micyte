@@ -135,6 +135,37 @@ def coarse_ip_prefix(ip: str) -> str:
     return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
 
 
+def browser_from_user_agent(user_agent: str) -> str:
+    """Coarse browser family from the UA string.
+
+    A server-side fallback for the client-stamped ``browser_name``, mirroring
+    the viewport fallback that already backstops ``device_type``. Without it the
+    field is simply blank whenever the collector omits it — which it did for
+    every event ever recorded, leaving ``primary_browser`` empty on 100% of
+    visitor rows.
+
+    Order matters: every Chromium browser carries both ``Chrome`` and ``Safari``
+    tokens, and Safari carries only ``Safari``. Most specific wins.
+    """
+    ua = _as_text(user_agent)
+    if not ua:
+        return ""
+    lowered = ua.lower()
+    if "edg/" in lowered or "edge/" in lowered or "edga/" in lowered:
+        return "Edge"
+    if "opr/" in lowered or "opera" in lowered:
+        return "Opera"
+    if "samsungbrowser/" in lowered:
+        return "Samsung Internet"
+    if "firefox/" in lowered or "fxios/" in lowered:
+        return "Firefox"
+    if "crios/" in lowered or "chrome/" in lowered or "chromium/" in lowered:
+        return "Chrome"
+    if "safari/" in lowered:
+        return "Safari"
+    return ""
+
+
 def _iso_to_epoch_ms(iso_string: str) -> int | None:
     """Best-effort ISO-8601 → epoch ms.
 
@@ -163,9 +194,13 @@ def compute_quality_flags(
     visitor_cookie_id_hash: str,
 ) -> tuple[str, ...]:
     """Server-stamped evidence tokens describing the event row's
-    quality. Each token names a *signal*, not a conclusion. See
-    ``docs/contracts/analytics_event_schema.md`` for the full token
-    glossary.
+    quality. Each token names a *signal*, not a conclusion.
+
+    The glossary used to live in ``docs/contracts/analytics_event_schema.md``,
+    which was deleted 2026-07-17 (``d30c6e55``) in the public/private docs
+    split. The tokens below ARE the glossary now — a citation to a file the
+    reader cannot open is worse than none, because it reads as though the
+    detail exists somewhere.
     """
     flags: list[str] = []
 
@@ -391,7 +426,9 @@ class RawEvent:
             scroll_depth_percent=_as_int(body.get("scroll_depth_percent")),
             user_agent_raw=_bounded(_as_text(user_agent)),
             device_type=_bounded(_as_text(body.get("device_type"))),
-            browser_name=_bounded(_as_text(body.get("browser_name"))),
+            browser_name=_bounded(
+                _as_text(body.get("browser_name")) or browser_from_user_agent(user_agent)
+            ),
             viewport_width=_as_int(body.get("viewport_width")),
             viewport_height=_as_int(body.get("viewport_height")),
             language=_bounded(_as_text(body.get("language"))),
@@ -470,6 +507,7 @@ __all__ = [
     "REQUIRED_EVENT_FIELDS",
     "STANDARD_ACTIONS",
     "RawEvent",
+    "browser_from_user_agent",
     "coarse_ip_prefix",
     "compute_quality_flags",
     "salted_hash",

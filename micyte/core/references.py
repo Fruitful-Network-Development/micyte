@@ -35,7 +35,7 @@ from micyte.core.document_naming import CanonicalNameError, parse_canonical_docu
 CONTRACT_SCHEMA = "mycite.portal.contract.v2"
 
 # A contract whose negotiation ended in refusal grants nothing. Every other
-# status (including "pending", where the live FND->Example Farm contract sits) declares
+# status (including "pending", where the live FND->farm contract sits) declares
 # the relationship, which is all the read side needs.
 REFUSED_STATUSES: frozenset[str] = frozenset({"revoked", "rejected", "terminated", "expired"})
 
@@ -52,6 +52,11 @@ class ReferenceGrant:
     consumer_msn_id: str
     resources: tuple[str, ...]
     status: str
+    #: The counterparty's Ed25519 public key (PEM), when the contract carries one.
+    #: This is what turns "an msn id names the counterparty" into an identity that can
+    #: be VERIFIED. Empty for every contract written before closed-channel engagement
+    #: existed, and an empty key admits nobody — absence refuses rather than defaults.
+    counterparty_public_key: str = ""
 
     @property
     def is_refused(self) -> bool:
@@ -88,6 +93,7 @@ def parse_contract(payload: Any) -> ReferenceGrant | None:
         consumer_msn_id=consumer,
         resources=tuple(resources),
         status=_as_text(payload.get("status")),
+        counterparty_public_key=_as_text(payload.get("counterparty_public_key")),
     )
 
 
@@ -98,6 +104,67 @@ def grants_for(grants: Iterable[ReferenceGrant], *, consumer_msn_id: str) -> lis
         for g in grants
         if g.consumer_msn_id == consumer_msn_id and g.owner_msn_id != consumer_msn_id and not g.is_refused
     ]
+
+
+def admitting_grant(
+    grants: Iterable[ReferenceGrant],
+    documents: Iterable[Any],
+    *,
+    channel_sandbox: str,
+    counterparty_msn_id: str,
+) -> ReferenceGrant | None:
+    """The grant that admits ``counterparty_msn_id`` to a closed channel, or None.
+
+    Three conditions, each already expressed somewhere and composed here rather than
+    re-derived: the grant names this counterparty; its contract status is ACTIVE (only
+    ACTIVE may carry traffic — the read side's looser "any non-refused status declares
+    the relationship" is deliberately NOT reused here, because engaging a channel is
+    traffic, not a reference); and the channel's sandbox is among the sandboxes the
+    grant's tracked resources resolve to.
+
+    That last condition is why no new document field is needed: a channel's ``sandbox``
+    attribute is a sandbox name, and :func:`granted_sandboxes` already answers which
+    sandboxes a contract's resources name. A contract that does not name the channel's
+    sandbox admits nothing, however active it is.
+    """
+    from micyte.domains.contracts.channel import state_from_contract_status
+
+    documents = tuple(documents)
+    for grant in grants:
+        if grant.consumer_msn_id != counterparty_msn_id:
+            continue
+        if not state_from_contract_status(grant.status).grants_channel:
+            continue
+        if channel_sandbox and channel_sandbox in granted_sandboxes(documents, grant):
+            return grant
+    return None
+
+
+def live_instance_nodes(payloads: Iterable[Any]) -> set[str]:
+    """The msn nodes that hold a live install, derived from contract payloads.
+
+    "Has an instance to reach" is a **derived** fact, never a stored flag: a node is a
+    live install exactly when a non-refused contract names it. Both parties of such a
+    contract are live — a contract is between two running installs — and a refused one
+    grants nothing.
+
+    This is the derivation ``publish_micyte_registry`` already applies for the public
+    registry feed's ``live`` status; it lives here so a second surface asking the same
+    question cannot answer it differently. Note what it is NOT derived from: the
+    registry card's ``dns`` cell holds an ordinary website domain (129 of 236 nodes
+    carry one), so reading it as an instance address would report a hundredfold more
+    installs than exist.
+
+    Pure over already-parsed payloads. The caller does the I/O.
+    """
+    nodes: set[str] = set()
+    for payload in payloads:
+        grant = parse_contract(payload)
+        if grant is None or grant.is_refused:
+            continue
+        nodes.add(grant.owner_msn_id)
+        nodes.add(grant.consumer_msn_id)
+    return nodes
 
 
 def granted_sandboxes(documents: Iterable[Any], grant: ReferenceGrant) -> frozenset[str]:
@@ -131,6 +198,39 @@ def granted_sandboxes(documents: Iterable[Any], grant: ReferenceGrant) -> frozen
             continue
         out |= {sb for sb, names in docs_by_sandbox.items() if resource in names}
     return frozenset(out)
+
+
+def own_instance_nodes(
+    documents: Iterable[Any], *, msn_id: str, exclude_sandbox: str
+) -> frozenset[str]:
+    """Node addresses ``msn_id``'s OTHER sandboxes define.
+
+    A contract governs reading someone ELSE's documents. Reading your own instance's
+    other sandbox is not a cross-instance reference at all and needs no grant — the
+    `agnet` channel sandbox and the `taxonomy` sandbox are both FND's, and a product
+    row keyed to a taxon node never left the instance.
+
+    Without this, an instance was worse off than its counterparty: the farm could
+    resolve FND's `txa` because the live FND->farm contract grants
+    `rc.<fnd>.txa`, while FND's own `agnet` sandbox could not resolve it at all and
+    every one of its 185 product taxon references read as dangling. That aborted the
+    `mutate_txa` cross-sandbox cascade the moment a node address moved — after the
+    taxonomy write had already landed.
+
+    This does NOT soften the check: only addresses some document in the instance
+    actually DEFINES are returned, so a reference to a node that exists nowhere is
+    still dangling, which is the whole point of the check.
+    """
+    nodes: set[str] = set()
+    for document in documents:
+        try:
+            parsed = parse_canonical_document_id(str(getattr(document, "document_id", "") or ""))
+        except CanonicalNameError:
+            continue
+        if parsed.msn_id != msn_id or not parsed.sandbox or parsed.sandbox == exclude_sandbox:
+            continue
+        nodes |= defined_node_addrs(document)
+    return frozenset(nodes)
 
 
 def external_nodes_for(

@@ -5,7 +5,7 @@ it owns the ``record_form`` envelope + a submit action to a create/onboard route
 subclass supplies only the field spec + the route. :class:`FarmOnboardingTool` specialises
 it into farm onboarding — it collects a farm's name, sandbox token, registrar msn node and
 (optional) parcels, and posts to ``/portal/api/v2/agro/create_farm``, which clones the
-standardized ``example_farm`` template into a new blank farm-profile sandbox
+standardized farm template into a new blank farm-profile sandbox
 (``scripts/bootstrap_farm_sandbox``). Same base can later specialise into other onboarding
 flows (grantee, entity) without new client code — it reuses the shared ``record_form`` renderer.
 """
@@ -15,11 +15,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from micyte.ports.datum_write_policy import DeclaredWrite
 from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
 from ._registry import register
+from ._requirements import REGISTRAR
 
 
 class OnboardingTool:
@@ -30,6 +32,9 @@ class OnboardingTool:
     summary = ""
     route = WORKBENCH_UI_TOOL_ROUTE
     # Universal: reachable from any sandbox (incl. an empty one) via the direct ?tool= path.
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = REGISTRAR
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -62,13 +67,14 @@ class FarmOnboardingTool(OnboardingTool):
     """Onboard a new farm: clone the standardized template into a blank farm-profile sandbox."""
 
     tool_id = "farm_onboarding"
+    writes = (DeclaredWrite(document_kind="farm", action="create_farm"),)
     label = "Farm Onboarding"
     summary = "Onboard a new farm — a blank farm-profile sandbox cloned from the standardized template."
     schema = "mycite.v2.portal.workbench.tool.farm_onboarding.v1"
     title = "Farm Onboarding"
     intro = (
         "Create a new farm as its own sandbox, cloned from the standardized "
-        "example_farm template and keyed by the farm's registrar msn node. "
+        "standardized farm template and keyed by the farm's registrar msn node. "
         "Optionally seed its property boundary from parcels."
     )
     submit_route = "/portal/api/v2/agro/create_farm"

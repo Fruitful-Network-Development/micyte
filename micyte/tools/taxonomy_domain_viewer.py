@@ -34,8 +34,8 @@ from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
-from ._archetype import find_named_document, read_sandbox_catalog
-from ._registry import register
+from ._archetype import find_anchor, find_named_document, read_sandbox_catalog
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from ._shared.utilities import row_head as _row_head
 from .samras_structure_viewer import build_magnitude_tree, discover_samras_structures
@@ -199,6 +199,9 @@ class TaxonomyDomainViewer:
         "scientific + common names with produce icons and closest-parent icon fallback."
     )
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = (
         "samras_taxonomy",
         "agro_erp_taxonomy_row",
@@ -216,10 +219,10 @@ class TaxonomyDomainViewer:
         datum_address: str,
         extra_query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_SANDBOX)
         if err:
             return _notice(err)
-        anchor = find_named_document(docs, sandbox=_SANDBOX, name="anchor")
+        anchor = find_anchor(docs, sandbox=_SANDBOX)
         if anchor is None:
             return _notice(
                 "The taxonomy sandbox is not provisioned yet. Run "
@@ -280,4 +283,6 @@ class TaxonomyDomainViewer:
 
 
 # Self-register on import.
-register(TaxonomyDomainViewer())
+# NOT REGISTERED. A tool that merely renders a document's own values has no reason
+# to be a tool. Its pane is a viewscope tree of the shared txa now. The MODULE stays: `taxa_product_table` imports its icon machinery, including the closest-ancestor fallback that gives a cultivar its family's icon — a derivation, which is what a tool is for.
+# register(TaxonomyDomainViewer())  # retired TASK-2026-08-06-004 Phase 9

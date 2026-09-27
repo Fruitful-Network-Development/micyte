@@ -1,0 +1,37 @@
+{
+  "schema": "micyte.packages.lock.v1",
+  "packages": {
+    "brevat": {
+      "version": "1.2.0",
+      "digest": "sha256:54e5759ed43c20790fbf50fd4f57b1967ec36a918e09d6fcabe01f1f5977191d"
+    },
+    "claude": {
+      "version": "1.0.0",
+      "digest": "sha256:ae5b2a30cc01a822305592fcc62fb973c24d46a52b3e2c3a35f44011e8db0e84"
+    },
+    "enchir": {
+      "version": "1.2.0",
+      "digest": "sha256:179181be9dd35b64cd77b874ac3e92f9fc1902c2085e97555018bb3fdd3f976f"
+    },
+    "fnd_service": {
+      "version": "1.6.0",
+      "digest": "sha256:b1082446db81fdf1fdc8b088bca3946d37d62960542e19ccc5ee601e161d078c"
+    },
+    "grantor": {
+      "version": "0.2.0",
+      "digest": "sha256:6a6de68c7041aeed0dc9c4413f794e925d4ada05854ba3905a6e9f3211084aa3"
+    },
+    "oveure": {
+      "version": "1.2.0",
+      "digest": "sha256:5489d9f5681fd7bb78d49d56b331e5f7d4894ffbbde723509acbf64fc4d0364f"
+    },
+    "pim": {
+      "version": "0.1.0",
+      "digest": "sha256:d9e4228ec0b2afbde6415507cf35c97c5c78998f8b2d0d1ea5ce66d8122984d4"
+    },
+    "quiar": {
+      "version": "2.3.0",
+      "digest": "sha256:46f7f06585f5d88b12de7eda2cd381f37f2b7e94aa6d9fb8dc701cd95ee58b56"
+    }
+  }
+}

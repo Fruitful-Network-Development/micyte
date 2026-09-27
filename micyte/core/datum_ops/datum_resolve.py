@@ -25,8 +25,13 @@ is implemented here over the same 8-bit ASCII encoding :mod:`.labels` produces
 
 from __future__ import annotations
 
+from collections.abc import Container, Mapping
 from typing import Any
 
+from micyte.core.document_naming import (
+    ANCHOR_DOCUMENT_NAMES,
+    LOCAL_DOMAIN_DOCUMENT_NAMES,
+)
 from micyte.core.structures.hops import decode_hops_coordinate_token
 from micyte.core.structures.samras.structure import as_text
 
@@ -77,6 +82,27 @@ def iter_marker_pairs(head: list[Any]):
         yield as_text(head[i]), head[i + 1]
 
 
+def marker_buckets(head: list[Any]) -> dict[str, list[Any]]:
+    """``{marker: [magnitude, …]}`` for a row head, markers lowercased, order kept.
+
+    Every reader of a record row wants the same thing: the lcl refs in order, the
+    nominals in order, the date. That walk — three list comprehensions over
+    ``range(1, len(head) - 1, 2)``, or a hand-rolled ``setdefault`` loop — was written
+    out separately in the consumption model, the inventory table, the synopsis, the
+    contract tool, the record-viewer base and the write runtime. Six spellings of one
+    grammar, and the row head is positional, so a seventh is how a reader ends up
+    indexing a slot that moved.
+
+    Bucketing by marker (rather than zipping positionally) is also what makes a reader
+    survive an added pair: a magnitude the caller did not write occupies its own
+    marker's slot and shifts nothing in another's.
+    """
+    buckets: dict[str, list[Any]] = {}
+    for marker, magnitude in iter_marker_pairs(head):
+        buckets.setdefault(marker.lower(), []).append(magnitude)
+    return buckets
+
+
 # Canonical title encode (re-export) + decode (inverse, NUL-terminated).
 encode_label = _labels.encode_label_bits
 
@@ -104,11 +130,28 @@ def decode_label(bits: object) -> str:
     return "".join(out)
 
 
-def resolve_coordinate(head: list[Any]) -> list[tuple[float, float]]:
-    """Decode a family-4 ring head's ``rf.3-1-3`` HOPS tokens → ``(lon, lat)`` coords."""
+def resolve_coordinate(head: list[Any], *, sandbox: str = "") -> list[tuple[float, float]]:
+    """Decode a family-4 ring head's HOPS coordinate tokens → ``(lon, lat)`` coords.
+
+    ``sandbox`` resolves the marker by LOGICAL FIELD through the decoder ring. Without it
+    this matched ``Markers.COORDINATE`` — ``rf.3-1-3``, the FARM numbering — and so decoded
+    the two farm profiles and NONE of the 469 registrar boundaries, whose coordinate is
+    ``rf.3-1-1``. Measured: 565 ring rows, 556 of them invisible.
+
+    The default keeps the farm marker so no existing caller changes behaviour, and every
+    caller that knows its sandbox should pass it. That is the same blindness
+    ``hops_geospatial_filament`` has, and the two have to be fixed together: widening the
+    scan while this stayed narrow would offer four tools against geometry they cannot read.
+    """
+    markers = {Markers.COORDINATE}
+    if sandbox:
+        try:
+            markers.add(_fr.marker(sandbox, "coordinate"))
+        except KeyError:
+            pass
     coords: list[tuple[float, float]] = []
     for i in range(len(head) - 1):
-        if as_text(head[i]) == Markers.COORDINATE:
+        if as_text(head[i]) in markers:
             decoded = decode_hops_coordinate_token(as_text(head[i + 1]))
             if decoded:
                 coords.append((decoded["longitude"]["value"], decoded["latitude"]["value"]))
@@ -249,13 +292,144 @@ def view_token_index(document: Any | None) -> dict[str, str]:
     return out
 
 
+#: The node kinds :func:`node_kind_index` reports. ``unmarked`` is a real answer, not a
+#: fallback — see that function's note on why it must never be read as ``type``.
+NODE_KIND_TYPE = "type"
+NODE_KIND_INSTANCE = "instance"
+NODE_KIND_UNMARKED = "unmarked"
+
+#: Which marker a node address rides on, and therefore what the node IS. A definition row
+#: carries its own address on exactly one of these, and the choice is the distinction.
+_KIND_BY_MARKER = {
+    Markers.NODE_ID: NODE_KIND_TYPE,        # rf.3-1-1  — structural / definition node
+    Markers.LCL_ID: NODE_KIND_INSTANCE,     # rf.3-1-5  — a record's own identity
+    Markers.LCL_ID_MYC: NODE_KIND_TYPE,     # rf.3-1-13 — registrar's lcl vocabulary, all types
+}
+
+
+def kind_of_marker(marker: object) -> str:
+    """``"type"`` / ``"instance"`` for a marker that carries a node's OWN address, else ``""``.
+
+    The table above, asked one marker at a time. It exists because "which marker means a
+    type HERE" is a question a WRITER has to answer too — :func:`~micyte.core.datum_ops.
+    local_domain.domain_markers` picks a namespace's node marker by asking it — and a
+    second copy of the mapping in the writer is how a written row ends up meaning something
+    the reader disagrees with.
+    """
+    return _KIND_BY_MARKER.get(as_text(marker).lower(), "")
+
+
+def node_kind_index(document: Any | None) -> dict[str, str]:
+    """node_address → ``"type"`` | ``"instance"``, from which marker carries the address.
+
+    The distinction is already in the corpus and has never been read. ``agro_write_runtime``
+    mints a subtype container on :data:`Markers.NODE_ID` and the record under it on
+    :data:`Markers.LCL_ID`; the registrar's ``lcl`` is a pure vocabulary and rides
+    :data:`Markers.LCL_ID_MYC` throughout, so every node in it is a type. Live at the time
+    of writing: farm A 65 type / 4 instance, farm B 19 / 3, registrar 65 / 0.
+
+    It is what an editing surface needs in order to offer the right verb — "define a type
+    here" against "create a record here" — so the tree has to carry it before anything can
+    write from the tree.
+
+    A node whose address rides neither marker is **absent from the map**, and the caller must
+    read that as ``unmarked`` rather than as a type. Guessing "type" would let a generic
+    create path mint records under a node nothing has established is a container; a node the
+    corpus has not classified is one a human still has to look at. `parcel_1..3` in a farm's lcl are
+    marked as types while the identically-shaped `field_1` is marked an instance, so the
+    marking is known to be imperfect and the reader must not paper over it.
+
+    Mirrors :func:`view_token_index`: same definition rows, same canonical marker walk.
+
+    The other two SAMRAS structures answer honestly rather than emptily, which is worth
+    knowing before reading a result:
+
+    * **txa** carries every node on :data:`Markers.NODE_ID`, so a taxonomy reads as types
+      throughout (4,084 of them). That is right — a taxon IS a definition — and it stays
+      inert because txa carries no VIEW markers, so nothing there can take a record.
+    * **msn** (``administrative`` / ``address_nodes``) carries its nodes on a marker that is
+      neither, so it comes back EMPTY: a gazetteer address is not a type or a record in this
+      sense, and saying nothing is the correct answer for it.
+    """
+    out: dict[str, str] = {}
+    if document is None:
+        return out
+    for row in getattr(document, "rows", ()) or ():
+        head = _head(getattr(row, "raw", None))
+        if head is None or not _is_definition_head(head):
+            continue
+        node = as_text(head[2])
+        if not node:
+            continue
+        for marker, magnitude in iter_marker_pairs(head):
+            kind = _KIND_BY_MARKER.get(as_text(marker).lower())
+            # The node's OWN address, not a reference it happens to carry to another node:
+            # a row may cite other nodes further along its head, and those say nothing about
+            # what this node is.
+            if kind is not None and as_text(magnitude) == node:
+                out[node] = kind
+                break
+    return out
+
+
+#: Documents a node-reference scan skips by default. An lcl definition row carries its own node
+#: address on a node-ref marker — that is what MAKES it a definition, not a reference to
+#: something else — and the anchor holds bitstreams, not addresses.
+#:
+#: Derived from the reserved NAME SETS, never from one literal each. It was
+#: ``{"lcl", "anchor"}``: it therefore did not skip ``anthology`` (every instance's own
+#: anchor) and it stopped skipping the local domain the moment that document was renamed —
+#: at which point every node's own definition row read as a citation of itself and every
+#: delete refused with "1 row(s) cite nodes here".
+_NOT_REFERENCES: frozenset[str] = frozenset(
+    ANCHOR_DOCUMENT_NAMES | set(LOCAL_DOMAIN_DOCUMENT_NAMES))
+
+
+def references_to_node(
+    documents: Mapping[str, Any], node: str, *, exclude: Container[str] = _NOT_REFERENCES
+) -> list[tuple[str, str]]:
+    """``(document_name, datum_address)`` for every row that CITES ``node``, sorted.
+
+    A node address in a magnitude slot behind a :data:`Markers.NODE_REF` marker is a reference:
+    a contract naming its referent plot, a feature naming the object it draws, a record naming
+    the node it is. Anything that would remove or empty a node has to know who is pointing at
+    it first — ``agro_write_runtime._contracted_nodes`` is this question asked about one
+    document, and this is the same question asked about the whole sandbox.
+
+    Only markers the vocabulary declares node-carrying are followed, so a title babelette that
+    happens to read like an address is never mistaken for a citation.
+    """
+    wanted = as_text(node)
+    hits: list[tuple[str, str]] = []
+    if not wanted:
+        return hits
+    for name, document in (documents or {}).items():
+        if name in exclude or document is None:
+            continue
+        for row in getattr(document, "rows", ()) or ():
+            head = _head(getattr(row, "raw", None))
+            if head is None:
+                continue
+            if any(Markers.is_node_ref(marker) and as_text(magnitude) == wanted
+                   for marker, magnitude in iter_marker_pairs(head)):
+                hits.append((as_text(name), as_text(getattr(row, "datum_address", ""))))
+    return sorted(hits)
+
+
 __all__ = [
+    "NODE_KIND_INSTANCE",
+    "NODE_KIND_TYPE",
+    "NODE_KIND_UNMARKED",
     "Markers",
     "NameIndex",
     "cached_index",
     "decode_label",
     "encode_label",
     "iter_marker_pairs",
+    "kind_of_marker",
+    "marker_buckets",
+    "node_kind_index",
+    "references_to_node",
     "resolve_coordinate",
     "rewrite_title",
     "view_token_index",

@@ -1,11 +1,19 @@
 # Crypto
 
-Status: reserved stub (not yet implemented).
+Status: **built** (2026-08-02). Ports only — the implementations are FND-side.
 
-Placeholder for pure cryptographic primitives split out from v1 `vault_session`.
-It will host asymmetric keypair generation, signing/verification, and symmetric
-KDF helpers for the future network/contract layer.
+micyte depends on `pyyaml` + `shapely` and nothing else, so this package declares
+the *shape* of cryptographic operations and a peripheral supplies the
+`cryptography`-backed implementation. An install that never engages a closed
+channel pays nothing for either.
 
-Design spec: [`90-network-contract-architecture.md`](../../../../docs/wiki/90-network-contract-architecture.md)
-(forward reference — this wiki page is produced by a sibling unit in the current
-documentation batch and may not be present on `main` yet).
+- `signature.py` — request signature verification port (Ed25519 in practice).
+- `channel.py` — cipher / sealed-channel shape. Encrypt the bytes, never alter the
+  plaintext: that rule is what lets one viewer decode both an open (plain) and a
+  closed (sealed) session.
+
+Private key material lives in the FND-side vault (`instance_keys.py` — 0600 inside
+0700, refuses to re-mint, refuses wide permissions) and must never reach the local
+audit log, which `local_audit/service.py` enforces with a deny-list.
+
+Design spec: [`90-network-contract-architecture.md`](../../../docs/wiki/90-network-contract-architecture.md)

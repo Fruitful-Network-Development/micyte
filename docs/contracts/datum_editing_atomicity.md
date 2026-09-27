@@ -2,7 +2,13 @@
 
 ## Status
 
-Canonical
+Canonical algorithm. Implementation: `micyte/core/mss/transform.py` (TASK-2026-09-16-002 P2).
+Before it, the algorithm was realized piecemeal — family compaction in
+`micyte/core/datum_ops/node_ops.py` (`_drop_and_renumber`), canonical renumbering with reference
+remap in `micyte/core/mss/document_codec.py` (`reindex_into_isolated_anthology`), arity re-family in
+`micyte/core/datum_ops/row_address.py` — and no single verb did insert / delete / shift as one
+sequence. This page cited a `micyte/core/datum_editing` package until 2026-09-17; that directory
+never existed at any commit a reader could check out.
 
 ## Purpose
 
@@ -11,8 +17,8 @@ a datum document, including top-down domino ordering, reference cascading, and
 magnitude-ordering restoration.
 
 This contract is upstream of:
-- `micyte/core/datum_editing/__init__.py` (implementation)
-- `micyte/adapters/sql/datum_semantics.py` (adapter layer)
+- `micyte/core/mss/transform.py` (implementation)
+- `micyte/core/datum_semantics/engine.py` (the address / hyphae / MSS engine; the `adapters/sql/datum_semantics` shim that re-exported it was removed 2026-09-10)
 - `fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` (entry point)
 
 ---
@@ -173,12 +179,12 @@ pre-edit state.
 
 | Component | File | Lines |
 |---|---|---|
-| Pure edit functions | `micyte/core/datum_editing/__init__.py` | all |
-| Insert/delete driver | `micyte/adapters/sql/datum_semantics.py` | 463–573 |
+| Pure edit functions | `micyte/core/mss/transform.py` | all |
+| Insert/delete driver | `micyte/core/datum_semantics/engine.py` | `preview_document_insert` / `preview_document_delete` |
 | SQL apply | `micyte/adapters/sql/datum_store.py` | 761–818 |
-| Version identity | `micyte/adapters/sql/datum_semantics.py` | 133–328 |
+| Version identity | `micyte/core/datum_semantics/engine.py` | `build_document_version_identity` |
 | Workbench entry | `fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` | 180–199 |
-| Unit tests | `fnd_app/tests/unit/test_datum_editing.py` | all |
+| Unit tests | `fnd_app/tests/unit/test_mss_transform.py` | all |
 
 ---
 

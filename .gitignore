@@ -1,22 +1,59 @@
-# Python
+# Python runtime
 __pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
-*.egg
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+*.log
 
-# Virtual environments
+# Virtualenv / tooling
 .venv/
 venv/
 env/
+.env
+.env.*
+!.env.example
 
-# Tooling caches
-.ruff_cache/
-.pytest_cache/
-.mypy_cache/
-
-# OS / editor
+# Editor/OS
 .DS_Store
+.idea/
+.vscode/
 *.swp
+
+# Portal runtime/state (never commit)
+**/private/request_log/*.ndjson
+**/private/*.sqlite3
+**/private/daemon_state/**
+**/data/cache/**
+**/data/queue/**
+**/vault/**
+**/*.pem
+**/*.key
+**/secrets/**
+**/state/**
+# Operational + PII state: aws-csm mailbox profiles carry real board-member
+# names/emails. The canonical store is the LIVE tree
+# (/srv/webapps/mycite/<grantee>/private/.../aws-csm); deployed/ is a DR
+# snapshot and must never be versioned (PII + operational drift).
+deployed/*/private/utilities/tools/aws-csm/
+# Contact-roster leaflets (per-entity YAML under site-core/contacts) hold real
+# PII — names/emails/phones. The canonical store is the LIVE webapps tree; these
+# files are runtime/untracked and must NEVER be versioned.
+**/clients/_shared/site-core/contacts/*.contacts.yaml
+*.contacts.yaml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Agent worktrees created by the batch orchestrator. Each is its own checkout
+# of this repo; committing them adds bare gitlinks that clone as empty dirs.
+.claude/worktrees/

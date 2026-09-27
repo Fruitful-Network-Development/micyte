@@ -254,7 +254,6 @@ declares its `budget_group` (`initial_shell` vs `deferred_tool_renderers`) in
 the `PORTAL_SHELL_MODULE_CONTRACTS` tuple (`app.py:247` onward).
 
 What is *test-enforced today* is the **manifest ↔ static-directory integrity**,
-not the byte count:
 `fnd_app/tests/architecture/test_asset_manifest_module_presence.py` asserts
 every manifest entry points at a real file in
 `instances/_shared/portal_host/static/` (`:41`), that `module_id`s are unique
@@ -263,11 +262,31 @@ every manifest entry points at a real file in
 shared-layout invariants live in
 `fnd_app/tests/architecture/test_shared_site_core_layout.py`.
 
+The byte count is enforced too, as of the 2026-08-29 E2 unit. For four
+months `scripts/benchmarks/check_optimization_budgets.py` checked these caps
+against `benchmarks/results/build_weight_baseline.json`, a hand-run snapshot
+that nothing regenerated automatically -- it drifted so far that it reported
+"pass" while understating the shipped `v2_portal_workbench_renderers.js` by
+34x. The checker now gzips the real files in
+`instances/_shared/portal_host/static/` on every run
+(`scripts/benchmarks/build_weight_measure.py:measure_static_assets()`),
+deriving its file list from `build_shell_asset_manifest()` so it cannot
+drift from what actually ships.
+`fnd_app/tests/architecture/test_optimization_budget_measurement.py` guards
+the property that broke: it mutates a real shipped file and asserts the
+reported total moves, and feeds the checker a corrupted snapshot and asserts
+the corruption is ignored. Run it with
+`python scripts/benchmarks/check_optimization_budgets.py` -- as of this
+writing it correctly reports `FAIL` for `initial_load_gzip_bytes` and
+`total_gzip_bytes` (see `known_exceedances` in
+`benchmarks/budgets/optimization_budgets.json` for the recorded overage and
+the path back to compliance); the caps were kept at their declared values
+rather than raised to match today's number.
+
 Contributor implication: when you add or grow a shell module, keep it in the
-right `budget_group`, register it in `PORTAL_SHELL_MODULE_CONTRACTS`, and check
-its gzip size against the relevant budget by hand (the byte budget is policy,
-declared and `"hard"` in intent, but there is not yet a test that gzips the
-files and compares — do not assume CI will catch an over-budget bundle). Defer
+right `budget_group`, register it in `PORTAL_SHELL_MODULE_CONTRACTS`, and run
+`scripts/benchmarks/check_optimization_budgets.py` before a PR that changes
+static/ -- it will tell you the real gzip number, not a stale one. Defer
 anything that isn't needed for first paint into the deferred group. Delete dead
 modules so the orphan check stays green.
 

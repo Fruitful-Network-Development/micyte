@@ -12,9 +12,8 @@ from micyte.core.datum_documents import (
 # The engine exposes the public spellings of what used to be local underscored
 # copies here; aliasing keeps this module's internal call sites unchanged.
 from micyte.core.datum_semantics.engine import (
-    MSS_VERSION_HASH_POLICY,
     _row_local_refs,
-    _sha256_token,
+    build_document_version_identity,
 )
 from micyte.core.datum_semantics.engine import (
     datum_address_sort_key as _datum_address_sort_key,
@@ -36,20 +35,10 @@ def compute_mss_hash(datum_document: AuthoritativeDatumDocument) -> dict[str, An
 
     Returns dict with keys: policy, version_hash, canonical_payload.
     """
-    payload: dict[str, Any] = {
-        "policy": MSS_VERSION_HASH_POLICY,
-        "source_kind": datum_document.source_kind,
-        "document_metadata": datum_document.document_metadata or {},
-        "rows": [
-            {"datum_address": row.datum_address, "raw": row.raw}
-            for row in sorted(datum_document.rows, key=lambda r: _datum_address_sort_key(r.datum_address))
-        ],
-    }
-    return {
-        "policy": MSS_VERSION_HASH_POLICY,
-        "version_hash": _sha256_token(prefix=MSS_VERSION_HASH_POLICY, payload=payload),
-        "canonical_payload": payload,
-    }
+    # One implementation (2026-09-25): this used to build the same payload and hash it
+    # again, which is two places for an identity policy to live — the flip would have
+    # changed one of them.
+    return build_document_version_identity(datum_document)
 
 
 def derive_hyphae_chain(

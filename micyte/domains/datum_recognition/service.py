@@ -29,7 +29,14 @@ _DIAGNOSTIC_STATES = frozenset(
     }
 )
 _REFERENCE_RESOLUTION_STATES = frozenset({"resolved", "unresolved_anchor", "missing_reference"})
-_VALUE_KINDS = frozenset({"binary_string", "numeric_hyphen", "literal_text", "tuple", "unknown"})
+# `fiat_cents` is a price magnitude — an integer count of cents against a sandbox's fiat
+# datum. It belongs in this closed set rather than falling back to "unknown", because the
+# set is VALIDATED in DatumRecognitionReferenceBinding.__post_init__: a kind that is not
+# here raises, so omitting it would make every document carrying a priced row unreadable
+# by the workbench rather than merely unstyled.
+_VALUE_KINDS = frozenset(
+    {"binary_string", "numeric_hyphen", "literal_text", "tuple", "fiat_cents", "unknown"}
+)
 _OVERLAY_KINDS = frozenset(
     {
         "none",
@@ -37,6 +44,7 @@ _OVERLAY_KINDS = frozenset(
         "samras_babelette",
         "hops_babelette",
         "binary_overlay",
+        "fiat_babelette",
         "raw_only",
     }
 )
@@ -131,6 +139,12 @@ def _family_contract(anchor_label: object) -> tuple[str, str, str]:
         "babelette" in label or "babellette" in label
     ):
         return "network_babelette", "binary_string", "binary_overlay"
+    # A price magnitude. Matched on "fiat" AND "babelette" together so it cannot catch the
+    # `fiat-currency-unit` rudi label, which is a substance and not a price — and which is
+    # itself due a relabel, since the whole point of the chain above it is that fiat is the
+    # abstraction, not the primitive.
+    if "fiat" in label and ("babelette" in label or "babellette" in label):
+        return "fiat_babelette", "fiat_cents", "fiat_babelette"
     if "samras" in label and ("babelette" in label or "babellette" in label):
         return "samras_babelette", "numeric_hyphen", "samras_babelette"
     if "hops" in label and ("babelette" in label or "babellette" in label):
@@ -665,10 +679,25 @@ class DatumWorkbenchService:
             raise ValueError("datum_workbench.datum_store is not configured")
         return self._datum_store
 
-    def read_workbench(self, tenant_id: str) -> DatumWorkbenchProjection:
-        result = self._require_store().read_authoritative_datum_documents(
-            AuthoritativeDatumDocumentRequest(tenant_id=tenant_id)
-        )
+    def read_workbench(self, tenant_id: str, *, sandbox: str = "") -> DatumWorkbenchProjection:
+        """The recognized projection of the tenant's documents — of ONE sandbox when
+        ``sandbox`` names it (2026-09-25: the system workspace, the only caller, keeps
+        the ``system`` documents and one selected document, and paid the whole catalog)."""
+        store = self._require_store()
+        result = None
+        if sandbox:
+            # The sandbox door selects through the `documents` index, which holds canonical
+            # ids only; a store keyed under legacy ids (the fixtures of older suites) has no
+            # row there to select, and falls through to the whole read below.
+            documents_in = tuple(store.read_documents_by_sandbox(tenant_id=tenant_id, sandbox=sandbox))
+            if documents_in:
+                result = AuthoritativeDatumDocumentCatalogResult(
+                    tenant_id=tenant_id, documents=documents_in, source_files={},
+                    readiness_status={"authoritative_catalog": "loaded", "scope": sandbox})
+        if result is None:
+            result = store.read_authoritative_datum_documents(
+                AuthoritativeDatumDocumentRequest(tenant_id=tenant_id)
+            )
         normalized_result = (
             result
             if isinstance(result, AuthoritativeDatumDocumentCatalogResult)

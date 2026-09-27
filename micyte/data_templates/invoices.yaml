@@ -1,0 +1,50 @@
+template_id: invoices
+schema: mycite.v2.datum.standard.invoices.v1
+sandbox: "*"
+archetype: standard_invoice_row
+description: >
+  Invoices issued or received. One row per invoice in layer 4 / value-group 7 —
+  the family `record_spec.py` already allocates to invoices, so the existing
+  invoice viewer reads a document written from this template.
+
+  `amount` is a FIAT magnitude: an integer count of cents against the sandbox's
+  fiat babelette, never a decimal string. That is what makes the workbench show
+  it as `$4.50` — the `fiat_cents` lens decodes the magnitude, and it decodes it
+  because the reference says it is money. A price written as the text "4.50" is
+  a string that happens to look like money to a human and to nothing else.
+
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.standard.invoices.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "{{sandbox}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+repeating_archetype:
+  layer: 4
+  value_group_reference_design:
+    invoice_no:
+      magnitude_kind: trimmed_string
+      required: true
+    counterparty:
+      magnitude_kind: trimmed_string
+      required: true
+    issued_at:
+      magnitude_kind: utc_seconds
+      required: true
+    amount:
+      magnitude_kind: fiat_cents
+      required: true
+    status:
+      magnitude_kind: trimmed_string
+      required: false
+    note:
+      magnitude_kind: trimmed_string
+      required: false

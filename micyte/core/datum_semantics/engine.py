@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from micyte.core.datum_documents import (
@@ -18,6 +20,31 @@ def dumps_json(value: Any) -> str:
 
 
 MSS_VERSION_HASH_POLICY = "mos.mss_sha256_v1"
+#: The identity policy of a store whose ids carry the hash of each document's stored MSS
+#: bitstream (TASK-2026-09-17-001 phase D, the flip). Minted only under the token.
+TRANSPORT_IDENTITY_POLICY = "mos.mss_binary_v4"
+IDENTITY_POLICY_TOKEN = "MOS_CANONICAL_HASH"
+
+
+def identity_policy() -> str:
+    """The policy a new id is minted under.
+
+    ``mos.mss_sha256_v1`` — the JSON hash over the canonical payload — unless the
+    environment carries the token ``MOS_CANONICAL_HASH=mss_binary_v4``, in which case the
+    hash is the document's MSS-DOC.v4 transport hash over its rows (the same function the
+    flip keyed the store with, so re-writing a document's rows mints the id the flip gave
+    it). The store's doors refuse a write whose policy is not the one the store holds, so
+    the token cannot be forgotten silently — a write is refused, never mis-keyed.
+    """
+    token = (os.environ.get(IDENTITY_POLICY_TOKEN) or "").strip().lower()
+    return TRANSPORT_IDENTITY_POLICY if token == "mss_binary_v4" else MSS_VERSION_HASH_POLICY
+
+
+def token_for_policy(policy: str) -> str:
+    """The value ``MOS_CANONICAL_HASH`` must carry for the engine to mint under ``policy``
+    (``""`` for the JSON policy, which is the default). A process that works on a COPY of a
+    store sets its environment from the copy's policy, or the store's doors refuse it."""
+    return "mss_binary_v4" if str(policy or "").strip() == TRANSPORT_IDENTITY_POLICY else ""
 HYPHAE_CHAIN_POLICY = "mos.hyphae_chain_v1"
 EDIT_REMAP_POLICY = "mos.edit_remap_v1"
 
@@ -140,15 +167,27 @@ def _canonical_storage_row(row: AuthoritativeDatumDocumentRow) -> dict[str, Any]
 
 
 def build_document_version_identity(document: AuthoritativeDatumDocument) -> dict[str, Any]:
+    """The document's identity under :func:`identity_policy` — the ONE place a version hash
+    is computed (`micyte.core.mss.datum_identity.compute_mss_hash` delegates here)."""
+    policy = identity_policy()
     payload = {
-        "policy": MSS_VERSION_HASH_POLICY,
+        "policy": policy,
         "source_kind": document.source_kind,
         "document_metadata": document.document_metadata or {},
         "rows": [_canonical_storage_row(row) for row in sorted(document.rows, key=lambda item: datum_address_sort_key(item.datum_address))],
     }
+    if policy == TRANSPORT_IDENTITY_POLICY:
+        # Lazy: the transport imports this engine for the address grammar. The hash is
+        # over the ROWS — the sequence — as the flip computed it; the filing metadata is
+        # not part of an MSS identity.
+        from micyte.core.mss.transport import encode_rows
+
+        version_hash = encode_rows((row["datum_address"], row["raw"]) for row in payload["rows"]).hash
+    else:
+        version_hash = _sha256_token(prefix=policy, payload=payload)
     return {
-        "policy": MSS_VERSION_HASH_POLICY,
-        "version_hash": _sha256_token(prefix=MSS_VERSION_HASH_POLICY, payload=payload),
+        "policy": policy,
+        "version_hash": version_hash,
         "canonical_payload": payload,
     }
 
@@ -322,8 +361,12 @@ def compile_hyphae_value(
     """Compile the **canonical hyphae value** of ``datum_address`` — a single
     ``sha256:`` token over the datum's focus closure.
 
-    Per the MOS spec (``docs/personal_notes/MOS/mycelial_ontological_schema.md``
-    + ``docs/contracts/mss_binary_sequence/``), the canonical hyphae value MUST
+    Per the MOS spec (``docs/contracts/mss_binary_sequence/`` — the companion
+    citation to ``docs/personal_notes/MOS/mycelial_ontological_schema.md`` is
+    left unresolvable on purpose: that path was deleted 2026-07-17 (``d30c6e55``)
+    in the public/private docs split and the note is private, so a reader can
+    check this rule against the binary spec and nothing else), the canonical
+    hyphae value MUST
     carry the **ordinal rudi context** — *"include all preceding rudi datums even
     if not used directly; if the abstraction uses ``0-0-5``, include ``0-0-1``
     through ``0-0-5``"*. The rudis are the ordinal/incremental/nominal frames, so
@@ -344,6 +387,37 @@ def compile_hyphae_value(
 
 def build_document_semantics(document: AuthoritativeDatumDocument) -> dict[str, Any]:
     context = _semantic_context(document)
+    return _semantics_over(document, context, context["address_map"])
+
+
+def build_document_semantics_subset(
+    document: AuthoritativeDatumDocument,
+    context: dict[str, Any],
+    addresses: Iterable[str],
+) -> dict[str, Any]:
+    """:func:`build_document_semantics` for SOME of a document's rows.
+
+    The per-row loop is what costs: measured on `registrar/address_nodes`, the whole build
+    is 17.6 s at 41,999 rows while ``_semantic_context`` — the part every row shares — is
+    1.76 s, and exactly **1** row has a local dependency. An append that leaves the
+    context alone therefore needs the loop run only for the rows it added.
+
+    ``context`` is passed in rather than rebuilt because the caller has to compare it
+    against the pre-append one anyway: a row's hyphae folds ``anchor_context_hash``, so
+    restricting the loop is correct only while that hash holds still, and the caller is
+    where that can be checked.
+
+    Both paths run the SAME loop. Two implementations that agreed today would drift, and
+    the cheap one exists to produce the same answer as the dear one.
+    """
+    return _semantics_over(document, context, addresses)
+
+
+def _semantics_over(
+    document: AuthoritativeDatumDocument,
+    context: dict[str, Any],
+    addresses: Iterable[str],
+) -> dict[str, Any]:
     address_map = context["address_map"]
     dependency_map = context["dependency_map"]
     anchor_context_hash = context["anchor_context_hash"]
@@ -356,7 +430,7 @@ def build_document_semantics(document: AuthoritativeDatumDocument) -> dict[str, 
         if parse_datum_address(address)[:2] == (0, 0)
     }
     row_results: dict[str, dict[str, Any]] = {}
-    for address in address_map:
+    for address in addresses:
         closure = _dependency_closure(address, dependency_map)
         reachable_rudi_iterations = [
             parse_datum_address(item)[2]

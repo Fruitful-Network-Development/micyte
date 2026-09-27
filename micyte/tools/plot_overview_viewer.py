@@ -24,6 +24,7 @@ from micyte.state_machine.portal_shell.shell_schemas import (
 
 from ._archetype import resolve_tool_sandbox
 from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from .geospatial_projection_viewer import build_geospatial_payload, resolve_farm_scene
 
@@ -44,6 +45,9 @@ class PlotOverviewViewer:
     label = "Plot Overview"
     summary = "The farm's defined fields, clusters and plots — read-only, zoomed to the field."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ("hops_geospatial_filament",)
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True

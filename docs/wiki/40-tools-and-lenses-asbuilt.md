@@ -1,7 +1,15 @@
 # Tools & Lenses (as-built)
 
 > Status: as-built
-[← Overview](00-overview-and-glossary.md)
+>
+> [← Overview](00-overview-and-glossary.md)
+>
+> Rewritten 2026-08-23. It was marked `stale` because its census listed TWO concrete
+> renderers, from when there were two. There are 32. The per-tool table is gone rather
+> than extended: a hand-written census of 32 tools drifts exactly the way a census of two
+> did, and the registry already holds the answer. What is described here is the SHAPE —
+> the contract, the categories, and how a tool is reached — which is what a wiki page can
+> keep true.
 
 ## Purpose
 
@@ -43,15 +51,36 @@ definition; LOC is the file's line count.
 | `micyte/tools/__init__.py:18` | Imports each tool module for self-registration side-effect. | 35 |
 | `micyte/tools/_shared/README.md:1` | Empty placeholder stub for shared tool contracts/helpers. | 3 |
 
-### Tools — concrete renderers
+### Tools — the census is the registry
 
-| Path | Role | LOC |
+There is no table of tools here, and there should not be. There were two when this page
+was written and there are **32**; a list in prose is a second statement of something
+`micyte/tools/_registry.py` already holds exactly, and the two drift the moment somebody
+adds a tool without editing a wiki page — which is what happened.
+
+Ask the registry:
+
+```python
+from micyte.tools import all_tools, declared_writes
+[t.tool_id for t in all_tools()]
+```
+
+What the shape looks like as of 2026-08-23, which is the part worth writing down:
+
+| | count | what it means |
 |---|---|---|
-| `micyte/tools/workbench_ui_view.py:30` | `WorkbenchUiTool` palette entry; `applies_to_source_kind=("sandbox_source","system_anthology")`, no archetype. Navigates to its surface rather than painting the panel. | 71 |
-| `micyte/tools/product_document_view.py:130` | `ProductDocumentViewer`; `applies_to_archetype=("agro_erp_product_profile_row",)`, no source-kind. Resolves product/taxonomy names cross-document. | 253 |
-| `micyte/tools/product_document_view.py:72` | `LclNameIndex` — `node_address → display name` from `4-2-*` rows; falls back to `BinaryTextLens.decode` of the 512-bit title. | — |
-| `micyte/tools/workbench_ui/service.py:468` | `WorkbenchUiReadService` — ~900-LOC read-only spreadsheet builder. | 992 |
-| `micyte/tools/workbench_ui/README.md:1` | Ownership note: read-only two-pane SQL spreadsheet; overlays additive only. | 5 |
+| registered tools | 32 | everything `_registry` holds |
+| declare a WRITE | 14 | `writes` is a tuple of `DeclaredWrite`; a write is what `datum_write_policy` judges |
+| derive or render | 18 | no write; `test_tool_registry_shape` makes each one say what it DERIVES, or it is not a tool |
+| panes of an app | 13 | across brevat, quiar, oveure and pim — a tool belongs to exactly ONE lineage |
+| launched by ADDRESS | 18 | `applies_to_*` empty: a hub or an instrument, opened against the instance rather than the document in focus |
+
+Those counts are checked by `fnd_app/tests/architecture/test_tool_registry_shape.py`, which
+pins the registry as an EXACT set — a new tool and a retirement are both a decision, made
+in the commit that makes them. The history it records is the argument for not keeping a
+list here: 36 at the program's start, 29 after a removal, then 32, 35, 36, and the
+`assertLessEqual(36)` that recorded it gated only additions, so two retirements would have
+passed it silently.
 
 ### Tool eligibility & shell registry
 
@@ -111,31 +140,28 @@ Tools self-register by calling `register(MyTool())` at module scope; the
 package `__init__.py` imports each tool module purely for that side-effect
 (`__init__.py:18`), so importing `micyte.tools` populates
 `TOOL_REGISTRY`. `all_tools()` returns them sorted by `tool_id` for stable
-ordering (`_registry.py:43`). Two concrete tools ship today:
+ordering (`_registry.py:43`).
 
-- **Workbench UI** (`workbench_ui_view.py:30`) — the universal datum grid. It
-  declares `applies_to_source_kind=("sandbox_source","system_anthology")` and
-  **no** archetype, so it is offered for any sandbox-source or anthology
-  document. Its `build_panel_payload` does *not* render into the visualization
-  panel; it returns a marker dict with `navigates_to_surface: True`
-  (`workbench_ui_view.py:61`) — selecting it from the palette navigates to its
-  dedicated surface route, where `portal_workbench_ui_runtime` renders the
-  full spreadsheet.
-- **Product Document Viewer** (`product_document_view.py:130`) — declares
-  `applies_to_archetype=("agro_erp_product_profile_row",)` and **no**
-  source-kind, deliberately so it does not light up for every sandbox doc
-  (the match predicate ORs archetype and source-kind). It resolves each
-  product row's references against sibling `lcl`/`txa` documents via
-  `LclNameIndex` (`product_document_view.py:72`), reusing `BinaryTextLens` to
-  decode 512-bit binary titles.
+**Two shapes ship**, and the difference is what a tool does with the panel it is given:
 
-> Note: there are **two** registries. The lightweight `WorkbenchTool` registry
-> above (`micyte/tools`) is what the palette runtime consults. A separate,
-> richer shell-side registry of `PortalToolRegistryEntry` objects is built by
+- **Paints the panel.** `build_panel_payload` returns a container the workbench renders —
+  a `record_table`, an `objects_panel`, a viewscope. This is the ordinary shape and the one
+  to copy; `pim_overview` and `artifacts_viewer` are the smallest examples.
+- **Navigates to its own surface.** `build_panel_payload` returns only a marker with
+  `navigates_to_surface: True`, and the rendering happens on a dedicated route. This was
+  `workbench_ui`'s shape before it was retired as a tool on 2026-08-14; its read service
+  survives and still renders the spreadsheet, because retiring the palette entry did not
+  retire the surface.
+
+A third distinction cuts across both: whether a tool is offered for the document in FOCUS
+(it declares `applies_to_archetype` or `applies_to_source_kind`) or launched by ADDRESS
+against the instance (it declares neither). 18 of the 32 are the second kind — hubs and
+instruments — which is a majority the original two-tool census could not have anticipated.
+
 > `build_portal_tool_registry_entries` (`shell_registry.py:141`) and consumed
 > by `recognize_applicable_tools`. The two are kept in sync by hand — e.g. the
-> `workbench_ui` source-kinds match in both (`workbench_ui_view.py:45` and
-> `shell_registry.py:178`).
+> a tool's source-kinds must match in both, and nothing checks it — `shell_registry.py`
+> and the tool's own `applies_to_*` are two statements of one fact.
 
 ### Eligibility: archetype / source-kind intersection (widened by the hyphae chain)
 
@@ -251,7 +277,7 @@ URL query parameter.
 | Lenses keyed to a datum's **flagged** hyphae value (MSS abstraction-path flag) | **Absent** | Lenses resolve by `recognized_family` → overlay → `value_kind` (`registry.py:51`); there is no MSS-flag → hyphae-value match. Forward ref: [60-canonical-datum-and-hyphae-flags.md](60-canonical-datum-and-hyphae-flags.md). |
 | Lenses **managed** from a Utilities page | **Absent** | No Utilities lens-management surface exists; lenses are hard-coded in `DatumLensRegistry`. Forward ref: [81-lens-authoring-guide.md](81-lens-authoring-guide.md). |
 | Lenses **toggled** on/off from the Control Panel | **Absent** | Lenses auto-apply per family during projection; the only operator control is the coarse `workbench_lens=interpreted|raw` query mode. Forward ref: [81-lens-authoring-guide.md](81-lens-authoring-guide.md). |
-| Tools render into a shared interface/visualization panel | **Partial** | The `WorkbenchTool` contract returns a `panel_payload` for `regions.visualization_panel` (`_contract.py:42`), but both shipped tools instead carry a `route` and navigate to a dedicated surface (`workbench_ui_view.py:61`); no shipped tool paints the panel via `build_panel_payload`. |
+| Tools render into a shared interface/visualization panel | **Yes, since 2026** | Both shipped tools navigated to their own surface when this row was written, so nothing painted the panel. That is no longer true: most of the 32 return a container `build_panel_payload` renders in place, and navigating to a dedicated surface is now the exception a tool needs a reason for. |
 
 ## Open questions
 

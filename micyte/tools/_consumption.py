@@ -1,21 +1,30 @@
 """Batch consumption model — inventory *remaining* = total units minus planted capacity.
 
-A supply batch (an ``invoices`` ``4-7-*`` row) has a total discrete-unit count derived from its
-purchased amount and the product's ``propagule_density`` (units/g); a count-unit purchase
-(``500 slips``) is already a count. A ``contracts`` ``4-6-*`` row *commits* that batch to a
-referent plot (or cluster). The units a plot consumes from the batch is the operator's square-plot
-planting capacity::
+SUPPLY-BACKED (TASK-2026-08-14-002 batch re-point). A batch is a MODERN supply entry —
+an `invoice` row in the sandbox's ``invoices`` document that carries the two batch
+optionals (``lcl_id`` = the product leaf, ``nominal`` = the received amount) — and its
+identity is the ROW ADDRESS, never a minted node. A ``planting`` row in the sandbox's
+``plantings`` document *commits* that batch to a referent plot (or cluster), citing it
+by address through ``supply_ref``. The units a plot consumes from the batch is the
+operator's square-plot planting capacity::
 
     n = ((int(a / (s ** 0.5)) + 1) ** 2) // 4
 
-where ``a`` is the plot's side in cm (from its authoritative polygon) and ``s`` is the product's
-spacing area per plant in cm² (the product-profile ``spacing`` cm field squared). Remaining =
-total minus Sum(n) over the batch's contracts. When spacing (or the plot geometry) is unknown, the
-contract's own free-text amount is used as the committed count instead (the pre-existing weight
-draw-down behaviour), so nothing regresses for the ~1900 spacing-0 products.
+where ``a`` is the plot's side in cm (from its authoritative polygon) and ``s`` is the
+product's spacing area per plant in cm² (the product-profile ``spacing`` cm field
+squared). Remaining = total minus Sum(n) over the batch's plantings. When spacing (or
+the plot geometry) is unknown, the planting's own quantity is the committed count
+instead — the amount-basis fallback the old rows lived in for the ~1900 spacing-0
+products.
 
-Pure read model (no writes); shared by the Inventory Manager, the Inventory Synopsis and the
-Contract Viewer so all three agree on received / consumed / remaining.
+Rows are read by LOGICAL FIELD (`_viewscope._row_values` over the sandbox's namespace),
+never by address prefix or marker position: the writer archetype-checks every append,
+so a document's rows are covered by construction, and an entry WITHOUT the batch
+optionals is simply not a batch — listed nowhere, drawn from never.
+
+Pure read model (no writes); shared by the planting map and calendar, the contract-form
+batch rail, and ``_offering.on_hand_units`` so every surface agrees on
+received / consumed / remaining.
 """
 
 from __future__ import annotations
@@ -24,21 +33,18 @@ import math
 from datetime import date, timedelta
 from typing import Any
 
-from micyte.core.datum_ops.datum_resolve import cached_index, decode_label
+from micyte.core.datum_ops import archetype_shape as ash
+from micyte.core.datum_ops.datum_resolve import cached_index
 from micyte.core.datum_ops.units import is_count_unit, parse_quantity, to_grams
 
-from ._archetype import find_named_document
+from ._archetype import find_anchor, find_local_domain, find_named_document
 from ._hops_dates import chrono_authority, hops_token_to_date
 from ._shared.utilities import as_text as _as_text
-from ._shared.utilities import row_head as _row_head
+from ._viewscope import _row_values as _fields
 from .geospatial_projection_viewer import build_geospatial_payload
+from .ledger_books import PLANTINGS_DOC, SUPPLY_DOC
 from .product_document_view import build_product_rows
 
-_RF_LCL = "rf.3-1-5"
-_RF_UTC = "rf.3-1-6"
-_RF_NOMINAL = "rf.3-1-7"
-_INVOICES_PREFIX = "4-7-"
-_CONTRACTS_PREFIX = "4-6-"
 # metres per degree (equirectangular, good for a farm-scale local patch)
 _M_PER_DEG_LAT = 110540.0
 _M_PER_DEG_LON = 111320.0
@@ -90,7 +96,7 @@ def batch_total_units(amount_text: str, density_units_per_g: float) -> int | Non
 
 
 # (product_profiles id, lcl id, txa id) -> product index. Memoised for the same reason as the
-# geospatial projection: this walks every product profile (~2900 on trapp) and one PLAN render asks
+# geospatial projection: this walks every product profile (~2900 on the largest farm) and one PLAN render asks
 # for it four times (the consumption model, the batch options, gestation, the calendar). A document
 # id embeds its content hash, so the key self-invalidates on any write.
 _PRODUCT_CACHE: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = {}
@@ -106,7 +112,7 @@ def _product_index(docs: list[Any], sandbox: str) -> dict[str, dict[str, Any]]:
 
     Memoised and SHARED — read-only, do not mutate the returned dict.
     """
-    lcl_doc = find_named_document(docs, sandbox=sandbox, name="lcl")
+    lcl_doc = find_local_domain(docs, sandbox=sandbox)
     txa_doc = find_named_document(docs, sandbox=sandbox, name="txa")
     pp = find_named_document(docs, sandbox=sandbox, name="product_profiles")
     key = (_doc_id(pp), _doc_id(lcl_doc), _doc_id(txa_doc))
@@ -186,23 +192,55 @@ def _referent_capacity(node: str, spacing_cm: float, plot_sides: dict[str, float
     return None
 
 
+def _batch_rows(docs: list[Any], sandbox: str) -> list[tuple[str, dict[str, Any]]]:
+    """``(row_address, logical fields)`` for every BATCH in the supply book.
+
+    A batch is a supply entry carrying the two batch optionals; an entry without them is
+    honest bookkeeping and no batch — skipped here, so nothing downstream has to guess.
+    """
+    invoices = find_named_document(docs, sandbox=sandbox, name=SUPPLY_DOC)
+    out: list[tuple[str, dict[str, Any]]] = []
+    for row in getattr(invoices, "rows", ()) or ():
+        values = _fields(ash._row_head(row.raw), namespace=sandbox)
+        product = next((v for v in values.get("lcl_id", ()) if v), "")
+        amount = next((v for v in values.get("nominal", ()) if v), "")
+        if product and amount:
+            out.append((_as_text(row.datum_address), values))
+    return out
+
+
+def _planting_rows(docs: list[Any], sandbox: str) -> list[tuple[str, dict[str, Any]]]:
+    """``(row_address, logical fields)`` for every planting in the plantings book."""
+    plantings = find_named_document(docs, sandbox=sandbox, name=PLANTINGS_DOC)
+    return [
+        (_as_text(row.datum_address), _fields(ash._row_head(row.raw), namespace=sandbox))
+        for row in getattr(plantings, "rows", ()) or ()
+    ]
+
+
+def _one(values: dict[str, Any], field: str) -> str:
+    return next((_as_text(v) for v in values.get(field, ()) if v), "")
+
+
 def batch_consumption(docs: list[Any], sandbox: str) -> dict[str, dict[str, Any]]:
-    """Per batch (invoice) node -> received / consumed / remaining unit figures.
+    """Per batch (supply-row ADDRESS) -> received / consumed / remaining unit figures.
 
-    ``{batch_node: {product_node, product_name, total_units, consumed_units, remaining_units,
-    contract_count, basis}}``. ``basis`` is 'capacity' when the square-plot formula drove the
-    consumption or 'amount' when it fell back to the contract free-text amounts.
+    ``{address: {product_node, product_name, total_units, consumed_units,
+    remaining_units, contract_count, basis, ...}}``. ``basis`` is 'capacity' when the
+    square-plot formula drove the consumption or 'amount' when it fell back to the
+    plantings' own quantities.
 
-    Each contract is valued against the plots in force on **its own date**, not against today's
-    geometry. That matters for a CLUSTER referent, whose capacity is the Σ of its plots: with
-    effective-dated geometry a cluster accumulates retired plots alongside its live ones, and
-    summing them all would inflate consumed_units (driving remaining negative) purely because the
-    cluster was once reshaped. A contract consumed what its referent covered when it was written.
+    Each planting is valued against the plots in force on **its own date**, not against
+    today's geometry. That matters for a CLUSTER referent, whose capacity is the Σ of its
+    plots: with effective-dated geometry a cluster accumulates retired plots alongside
+    its live ones, and summing them all would inflate consumed_units (driving remaining
+    negative) purely because the cluster was once reshaped. A planting consumed what its
+    referent covered when it was written.
     """
     products = _product_index(docs, sandbox)
-    authority = chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor"))
-    # Memoised per contract date — a farm has a handful of distinct contract days, and each miss
-    # re-projects the whole farm_profile.
+    authority = chrono_authority(find_anchor(docs, sandbox=sandbox))
+    # Memoised per planting date — a farm has a handful of distinct planting days, and
+    # each miss re-projects the whole farm_profile.
     sides_cache: dict[Any, dict[str, float]] = {}
 
     def sides_on(day: date | None) -> dict[str, float]:
@@ -210,52 +248,39 @@ def batch_consumption(docs: list[Any], sandbox: str) -> dict[str, dict[str, Any]
             sides_cache[day] = _plot_sides_cm(docs, sandbox, as_of=day, authority=authority)
         return sides_cache[day]
 
-    invoices = find_named_document(docs, sandbox=sandbox, name="invoices")
     batch_meta: dict[str, dict[str, Any]] = {}
-    for row in getattr(invoices, "rows", ()) or ():
-        if not _as_text(row.datum_address).startswith(_INVOICES_PREFIX):
-            continue
-        head = _row_head(row)
-        lcl_refs = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_LCL]
-        noms = [decode_label(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_NOMINAL]
-        batch_node = lcl_refs[0] if lcl_refs else ""
-        product_node = lcl_refs[1] if len(lcl_refs) > 1 else ""
-        if not batch_node:
-            continue
+    for address, values in _batch_rows(docs, sandbox):
+        product_node = _one(values, "lcl_id")
+        amount = _one(values, "nominal")
         prod = products.get(product_node, {})
-        amount = noms[0] if noms else ""
         total = batch_total_units(amount, prod.get("density", 0.0))
-        batch_meta[batch_node] = {
+        stamp = _one(values, "utc")
+        batch_meta[address] = {
             "product_node": product_node,
             "product_name": prod.get("name", product_node),
             "spacing_cm": prod.get("spacing_cm", 0.0),
             "shelf_days": prod.get("shelf_days", 0),
             "amount_text": amount,
+            "received_token": stamp,
             "total_units": total,
             "consumed_units": 0,
             "contract_count": 0,
             "basis": "capacity",
         }
 
-    contracts = find_named_document(docs, sandbox=sandbox, name="contracts")
-    for row in getattr(contracts, "rows", ()) or ():
-        if not _as_text(row.datum_address).startswith(_CONTRACTS_PREFIX):
-            continue
-        head = _row_head(row)
-        lcl_refs = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_LCL]
-        noms = [decode_label(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_NOMINAL]
-        dates = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_UTC]
-        batch_node = lcl_refs[0] if lcl_refs else ""      # first lcl ref = the committed batch
-        referent = lcl_refs[1] if len(lcl_refs) > 1 else ""  # second = plot/cluster referent
-        meta = batch_meta.get(batch_node)
+    for _address, values in _planting_rows(docs, sandbox):
+        batch_addr = _one(values, "supply_ref")
+        referent = _one(values, "lcl_id")
+        meta = batch_meta.get(batch_addr)
         if meta is None:
             continue
-        # Value it against the geometry that existed on the contract's own day (None -> all plots
-        # ever, the safe fallback when the date is missing or undecodable).
-        on = hops_token_to_date(authority, dates[0]) if dates else None
+        # Value it against the geometry that existed on the planting's own day (None ->
+        # all plots ever, the safe fallback when the date is missing or undecodable).
+        stamp = _one(values, "utc")
+        on = hops_token_to_date(authority, stamp) if stamp else None
         cap = _referent_capacity(referent, meta["spacing_cm"], sides_on(on))
-        if cap is None:  # unknown spacing/geometry — fall back to the contract's free-text amount
-            amt_qty, _u = parse_quantity(noms[0] if noms else "")
+        if cap is None:  # unknown spacing/geometry — fall back to the planting's quantity
+            amt_qty, _u = parse_quantity(_one(values, "nominal"))
             cap = int(amt_qty)
             meta["basis"] = "amount"
         meta["consumed_units"] += cap
@@ -268,124 +293,94 @@ def batch_consumption(docs: list[Any], sandbox: str) -> dict[str, dict[str, Any]
 
 
 def contract_spans(docs: list[Any], sandbox: str) -> list[dict[str, Any]]:
-    """Every contract as a dated OCCUPANCY of its referent: when is this plot busy, with what.
+    """Every planting as a dated OCCUPANCY of its referent: when is this plot busy, with what.
 
-    ``[{datum_address, referent_node, batch_node, product_node, product_name, gestation_days,
-    start: date, end: date, amount, label}]`` — ``start`` is the contract's own day and ``end`` is
-    ``start + gestation_days`` (the product's seconds-encoded gestation, i.e. how long the planting
-    occupies the plot). A product with no gestation on file yields a single-day span rather than a
-    zero-width one, so it still draws.
+    ``[{datum_address, referent_node, batch_node, product_node, product_name,
+    gestation_days, start: date, end: date, amount, label}]`` — ``start`` is the
+    planting's own day and ``end`` is ``start + gestation_days`` (the product's
+    seconds-encoded gestation, i.e. how long the planting occupies the plot). A product
+    with no gestation on file yields a single-day span rather than a zero-width one, so
+    it still draws. ``batch_node`` is the supply row's ADDRESS; ``batch`` is what a
+    human reads (the product and its received date).
 
-    The single source of truth for plot occupancy: the Planting calendar's bars, the map's
-    "mid-planting" shading, and the effective-day suggestion all read it. Contracts whose date
-    cannot be decoded are skipped (they cannot be placed on a calendar).
+    The single source of truth for plot occupancy: the Planting calendar's bars, the
+    map's "mid-planting" shading, and the effective-day suggestion all read it.
+    Plantings whose date cannot be decoded are skipped (they cannot be placed on a
+    calendar).
     """
     products = _product_index(docs, sandbox)
-    authority = chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor"))
-    lcl = cached_index(find_named_document(docs, sandbox=sandbox, name="lcl"))
-
-    # batch node -> product node, from the invoices; a contract names its batch, not its product.
-    product_of_batch: dict[str, str] = {}
-    invoices = find_named_document(docs, sandbox=sandbox, name="invoices")
-    for row in getattr(invoices, "rows", ()) or ():
-        if not _as_text(row.datum_address).startswith(_INVOICES_PREFIX):
-            continue
-        head = _row_head(row)
-        refs = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_LCL]
-        if refs:
-            product_of_batch[refs[0]] = refs[1] if len(refs) > 1 else ""
+    authority = chrono_authority(find_anchor(docs, sandbox=sandbox))
+    lcl = cached_index(find_local_domain(docs, sandbox=sandbox))
+    batches = {address: values for address, values in _batch_rows(docs, sandbox)}
 
     out: list[dict[str, Any]] = []
-    contracts = find_named_document(docs, sandbox=sandbox, name="contracts")
-    for row in getattr(contracts, "rows", ()) or ():
-        if not _as_text(row.datum_address).startswith(_CONTRACTS_PREFIX):
-            continue
-        head = _row_head(row)
-        refs = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_LCL]
-        noms = [decode_label(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_NOMINAL]
-        dates = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_UTC]
-        start = hops_token_to_date(authority, dates[0]) if dates else None
+    for address, values in _planting_rows(docs, sandbox):
+        stamp = _one(values, "utc")
+        start = hops_token_to_date(authority, stamp) if stamp else None
         if start is None:
             continue
-        batch = refs[0] if refs else ""
-        referent = refs[1] if len(refs) > 1 else ""
-        product = product_of_batch.get(batch, "")
+        batch_addr = _one(values, "supply_ref")
+        referent = _one(values, "lcl_id")
+        batch = batches.get(batch_addr, {})
+        product = _one(batch, "lcl_id")
         prod = products.get(product, {})
+        product_name = prod.get("name", product) or product
+        received = _one(batch, "utc")
+        received_day = hops_token_to_date(authority, received) if received else None
         gest = int(prod.get("gestation_days") or 0)
         out.append({
-            "datum_address": _as_text(row.datum_address),
+            "datum_address": address,
             "referent_node": referent,
             "referent": lcl.resolve(referent) or referent,
-            "batch_node": batch,
-            "batch": lcl.resolve(batch) or batch,
+            "batch_node": batch_addr,
+            "batch": (f"{product_name} · {received_day.isoformat()}"
+                      if product_name and received_day else product_name or batch_addr),
             "product_node": product,
-            "product_name": prod.get("name", product) or product,
+            "product_name": product_name,
             "gestation_days": gest,
             "start": start,
             "end": start + timedelta(days=gest or 1),
-            "amount": noms[0] if noms else "",
+            "amount": _one(values, "nominal"),
         })
     out.sort(key=lambda s: (s["start"], s["referent_node"]))
     return out
 
 
 def available_batches(docs: list[Any], sandbox: str) -> list[dict[str, Any]]:
-    """Batches with units left to plant, OLDEST FIRST — the contract form's product options.
+    """Batches with units left to plant, OLDEST FIRST — the planting form's options.
 
-    ``[{batch_node, batch, product_node, product_name, remaining_units, total_units, received,
-    ordinal, oldest_for_product}]``. Ordered by the ``4-7-N`` ordinal ascending, which tracks
-    receival order (save_invoice keeps the rows sorted by it and preserves the original date on
-    edit). ``oldest_for_product`` flags the first batch of each product, so the form can default to
-    consuming the oldest stock rather than whatever happens to be listed first.
-
-    Nothing orders oldest-first today — the Inventory Manager is strictly newest-first — so this is
-    a new ordering, not a reuse. A batch whose total can't be derived (unknown unit / no density)
-    is kept: it is genuinely available, its remaining is just unknown.
+    ``[{datum_address, batch_node, batch, product_node, product_name, remaining_units,
+    total_units, received, oldest_for_product, gestation_days}]``. Ordered by the
+    received DAY ascending (the modern rows carry ``utc``; the old ordinal ordering
+    retired with the minted batch nodes), so the form defaults to consuming the oldest
+    stock. A batch whose total can't be derived (unknown unit / no density) is kept: it
+    is genuinely available, its remaining is just unknown.
     """
     meta = batch_consumption(docs, sandbox)
-    lcl = cached_index(find_named_document(docs, sandbox=sandbox, name="lcl"))
-    invoices = find_named_document(docs, sandbox=sandbox, name="invoices")
-    authority = chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor"))
-    # Hoisted: _product_index walks every product profile (~2900 on trapp), so this must not be
-    # rebuilt per row.
+    authority = chrono_authority(find_anchor(docs, sandbox=sandbox))
     gestation = products_gestation(docs, sandbox)
 
     rows: list[dict[str, Any]] = []
-    for row in getattr(invoices, "rows", ()) or ():
-        addr = _as_text(row.datum_address)
-        if not addr.startswith(_INVOICES_PREFIX):
-            continue
-        head = _row_head(row)
-        refs = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_LCL]
-        noms = [decode_label(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_NOMINAL]
-        dates = [_as_text(head[i + 1]) for i in range(1, len(head) - 1, 2) if _as_text(head[i]) == _RF_UTC]
-        batch = refs[0] if refs else ""
-        m = meta.get(batch)
-        if not batch or m is None:
-            continue
-        if any(t.strip().lower() == "retired" for t in noms):
-            continue  # retired: its remainder is waste, not stock
+    for address, m in meta.items():
         remaining = m.get("remaining_units")
         if remaining is not None and remaining <= 0:
             continue
-        received = hops_token_to_date(authority, dates[0]) if dates else None
-        try:
-            ordinal = int(addr.rsplit("-", 1)[1])
-        except (ValueError, IndexError):
-            ordinal = 0
+        token = _as_text(m.get("received_token"))
+        received = hops_token_to_date(authority, token) if token else None
+        received_text = received.isoformat() if received else ""
+        name = m.get("product_name", "")
         rows.append({
-            "datum_address": addr,
-            "ordinal": ordinal,
-            "batch_node": batch,
-            "batch": lcl.resolve(batch) or batch,
+            "datum_address": address,
+            "batch_node": address,
+            "batch": f"{name} · {received_text}" if name and received_text else name or address,
             "product_node": m.get("product_node", ""),
-            "product_name": m.get("product_name", ""),
+            "product_name": name,
             "total_units": m.get("total_units"),
             "remaining_units": remaining,
             "gestation_days": gestation.get(m.get("product_node", ""), 0),
-            "received": received.isoformat() if received else "",
+            "received": received_text,
         })
-    rows.sort(key=lambda r: r["ordinal"])   # oldest first
+    rows.sort(key=lambda r: (r["received"] or "9999-99-99", r["datum_address"]))
     seen: set[str] = set()
     for r in rows:
         r["oldest_for_product"] = r["product_node"] not in seen
