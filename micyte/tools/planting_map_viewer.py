@@ -1,4 +1,4 @@
-"""Planting Map — the PLAN > Planting map: the Plot overview plus contract creation.
+"""Planting Map — the PLAN > Planting map: the Plot overview plus planting creation.
 
 The same read-only geometry the Plot tab shows (defined-only, as of ``plan_day``), with two things
 layered on:
@@ -6,9 +6,11 @@ layered on:
 * **Occupancy** — every plot mid-planting on the viewing day carries the span occupying it, so the
   map answers "is this plot busy right now" directly. A contract on a cluster occupies every plot
   beneath it, which is why occupancy is computed per plot rather than per referent.
-* **Contract creation** — clicking a cluster zooms to it and opens an anchored popup: scope the
-  calendar to that cluster, or open the contract form. The form's product options are the batches
-  with stock left, oldest first, so consuming the oldest inventory entry is the default.
+* **Planting creation** — clicking a cluster zooms to it and opens an anchored popup: scope the
+  calendar to that cluster, or open the planting form. The form's options are the supply BATCHES
+  with stock left, oldest first, so consuming the oldest stock is the default — supply-backed
+  planting (TASK-2026-08-14-002 batch re-point): a batch is a supply row's address, and the
+  planting cites it through `supply_ref`.
 
 Rendered by ``renderGeospatialProjection`` (same map), which reads the extra keys only when set.
 """
@@ -18,12 +20,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from micyte.ports.datum_write_policy import DeclaredWrite
 from micyte.state_machine.portal_shell.shell_schemas import WORKBENCH_UI_TOOL_ROUTE
 
-from ._archetype import find_named_document, read_sandbox_catalog, resolve_tool_sandbox
+from ._archetype import find_anchor, find_named_document, read_sandbox_catalog, resolve_tool_sandbox
 from ._consumption import available_batches, contract_spans, occupancy_on
 from ._hops_dates import chrono_authority
 from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from .geospatial_projection_viewer import build_geospatial_payload
 from .plot_overview_viewer import _DAY_PARAM, parse_day
@@ -31,7 +35,7 @@ from .plot_overview_viewer import _DAY_PARAM, parse_day
 _TENANT_DEFAULT = "fnd"
 _SCHEMA = "mycite.v2.portal.workbench.tool.planting_map.v1"
 _CLUSTER_PARAM = "plan_cluster"
-_CONTRACT_ROUTE = "/portal/api/v2/agro/save_contract"
+_PLANTING_ROUTE = "/portal/api/v2/ledger/add_planting"
 
 
 class PlantingMapViewer:
@@ -42,6 +46,12 @@ class PlantingMapViewer:
     summary = "The farm's plots on a given day, with what occupies them and a way to contract them."
     route = WORKBENCH_UI_TOOL_ROUTE
     # Embedded-only pane (composed into PLAN > Planting).
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+    #: The planting write is THIS pane's: its popup is the form that posts it. The old
+    #: `contract.save_contract` declaration retired with `contract_editor`.
+    writes = (DeclaredWrite(document_kind="planting", action="add_planting"),)
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -51,7 +61,9 @@ class PlantingMapViewer:
         datum_address: str, extra_query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         eq = extra_query or {}
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        # ONE sandbox when the request names it; the whole catalog only for the blank
+        # request the resolver answers with the first farm by shape (2026-09-25).
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_as_text(sandbox_id))
         if err:
             return {"schema": _SCHEMA, "error": err,
                     "feature_collection": {"type": "FeatureCollection", "features": []},
@@ -68,7 +80,7 @@ class PlantingMapViewer:
                     "feature_count": 0}
 
         day = parse_day(_as_text(eq.get(_DAY_PARAM)))
-        authority = chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor"))
+        authority = chrono_authority(find_anchor(docs, sandbox=sandbox))
         geo = build_geospatial_payload(fp, preview=False, as_of=day, authority=authority)
 
         plot_nodes = {_as_text(f["properties"].get("lcl_node"))
@@ -108,7 +120,7 @@ class PlantingMapViewer:
             # cluster click opens the anchored popup.
             "selectable": True,
             "contract_popup": True,
-            "contract_route": _CONTRACT_ROUTE,
+            "contract_route": _PLANTING_ROUTE,
             "batches": batches,
             "occupied_count": len(busy),
             **geo,

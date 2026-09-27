@@ -14,10 +14,15 @@ from micyte.adapters.sql import (
 )
 from micyte.core.datum_rules import family_column_template
 from micyte.core.datum_semantics import (
+    MSS_VERSION_HASH_POLICY,
     build_document_semantics,
     build_document_version_identity,
     datum_address_sort_key,
     parse_datum_address,
+)
+from micyte.core.document_naming import (
+    CanonicalNameError,
+    parse_canonical_document_id,
 )
 from micyte.core.mss import (
     build_catalog_index,
@@ -124,6 +129,25 @@ def _short_document_name(document_name: object) -> str:
     return base or text
 
 
+def _document_sandbox(document: AuthoritativeDatumDocument) -> str:
+    """The sandbox a document belongs to, read from its canonical id.
+
+    ``lv.<msn>.<sandbox>.<name>.<hash>`` — the sandbox is the third segment, which
+    is why this is derived rather than stored: the id is the authority on where a
+    document lives, and a second copy of that fact could disagree with it.
+
+    Falls back to ``tool_id`` for a document whose id is not canonical (the parser
+    refuses those rather than guessing), and to the empty string when neither
+    answers. An unknown sandbox groups under "unfiled" at the presentation layer —
+    it is never invented here.
+    """
+    try:
+        parsed = parse_canonical_document_id(_as_text(document.document_id))
+    except CanonicalNameError:
+        return _as_text(getattr(document, "tool_id", ""))
+    return _as_text(parsed.sandbox) or _as_text(getattr(document, "tool_id", ""))
+
+
 def _document_display_name(document: AuthoritativeDatumDocument) -> str:
     """The clean short label shown in the workbench doc-list.
 
@@ -147,7 +171,7 @@ _DATUM_KIND_DOCUMENT = "document"
 # Ordered (first match wins): stronger structural identities before weaker ones.
 # Each (kind, tokens) selects `kind` when any token is a case-insensitive
 # substring of the canonical/document name. Tokens are grounded in the live fnd
-# corpus — registrar/registry cards, trapp invoices/contracts, taxonomy `txa`,
+# corpus — registrar/registry cards, farm invoices/contracts, taxonomy `txa`,
 # `*_profiles` — with a few forward-looking geo tokens (no geo docs exist yet).
 # Note the deliberate contact/contract split: the record token is "contract"
 # (with the r), and the card tokens require the hyphen/underscore ("contact-card"
@@ -236,8 +260,69 @@ def _object_ref(raw: Any, *, datum_address: str) -> str:
 def _document_filter_haystack(document: dict[str, Any]) -> str:
     return " ".join(
         _as_text(document.get(key)).lower()
-        for key in ("document_id", "document_name", "source_kind", "version_hash")
+        for key in ("document_id", "document_name", "source_kind", "version_hash", "sandbox")
     )
+
+
+#: Where a document whose id names no sandbox is grouped. Named rather than
+#: silently dropped: a document the corpus cannot place is a fact worth seeing.
+_UNFILED_SANDBOX = "unfiled"
+
+
+def _sandbox_groups(
+    document_rows: list[dict[str, Any]], *, active_sandbox: str = ""
+) -> list[dict[str, Any]]:
+    """The document list projected into per-sandbox groups.
+
+    A projection of ``document_rows``, not a second read — the flat list stays
+    authoritative and every existing consumer keeps working. Workbench-UI shows
+    the whole tenant corpus on purpose (it is the reflective view), which for this
+    instance is 510 documents across 7 sandboxes with six of them named
+    ``anchor``. Flat, that is unnavigable; grouped, the sandbox does the
+    discriminating that the name cannot.
+
+    The active sandbox sorts first and is marked ``open`` so the operator lands on
+    what they selected; the rest follow by document count, because a sandbox with
+    484 documents is the one being looked for more often than one with two.
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    for document in document_rows:
+        sandbox = _as_text(document.get("sandbox")) or _UNFILED_SANDBOX
+        entry = groups.setdefault(
+            sandbox,
+            {"sandbox": sandbox, "count": 0, "documents": [], "open": False, "has_selected": False},
+        )
+        entry["documents"].append(document)
+        entry["count"] += 1
+        entry["has_selected"] = entry["has_selected"] or bool(document.get("selected"))
+
+    active = _as_text(active_sandbox)
+    # Where the operator is standing sorts first: the group holding the selected
+    # document, then the active sandbox, and only then the rest by size. Sorting by
+    # size alone put `registrar` (484 of 510 documents) at the top with everything
+    # else below it — technically ordered, and it buried the six other sandboxes
+    # under a scroll nobody would finish.
+    ordered = sorted(
+        groups.values(),
+        key=lambda group: (
+            0 if group["has_selected"] else 1,
+            0 if active and group["sandbox"] == active else 1,
+            -int(group["count"]),
+            group["sandbox"],
+        ),
+    )
+    for index, group in enumerate(ordered):
+        # Exactly one group opens — the one being stood in. Opening a second means
+        # the first is pushed off-screen by the length of it, which for a 484-document
+        # sandbox is the whole column.
+        group["open"] = bool(
+            group["has_selected"]
+            or (active and group["sandbox"] == active)
+            or (not active and index == 0 and len(ordered) == 1)
+        )
+    if ordered and not any(group["open"] for group in ordered):
+        ordered[0]["open"] = True
+    return ordered
 
 
 def _document_sort_value(document: dict[str, Any], *, sort_key: str) -> Any:
@@ -286,11 +371,32 @@ def _first_non_empty(*values: object) -> str:
     return ""
 
 
+# How much of a referent a SUMMARY may quote before it stops summarising. A datum
+# resolved through a binary lens carries its whole payload in `object_ref` — the
+# the farm instance anchor's 1-1-1 is 52,280 characters — and quoting that verbatim produced a
+# summary longer than the document it described, in one unbreakable token that set
+# the editor table's min-content width to 366,176px against an 887px pane.
+_SUMMARY_REF_BUDGET = 96
+
+
+def _summarised_ref(object_ref: str) -> str:
+    """A referent short enough to read, or a statement of how long it is.
+
+    The full payload is never lost — it stays in the row's raw JSON, which the
+    editor's Raw view edits directly. What is dropped here is the pretence that
+    transcribing a payload is the same as describing it.
+    """
+    if len(object_ref) <= _SUMMARY_REF_BUDGET:
+        return object_ref
+    return f"{object_ref[:_SUMMARY_REF_BUDGET]}… ({len(object_ref)} chars)"
+
+
 def _display_summary(*, relation: str, object_ref: str, recognized_family: str, resolved_lens: str, diagnostics: tuple[str, ...]) -> str:
+    referent = _summarised_ref(object_ref)
     bits = [
         recognized_family,
         f"lens:{resolved_lens}" if resolved_lens else "",
-        f"{relation} -> {object_ref}" if relation or object_ref else "",
+        f"{relation} -> {referent}" if relation or referent else "",
         _joined_tokens(diagnostics),
     ]
     return " · ".join(bit for bit in bits if bit)
@@ -516,16 +622,6 @@ def _preferred_document_id(document_rows: list[dict[str, Any]]) -> str:
 _GLOBAL_SURFACE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 _SURFACE_CACHE_MAX_ENTRIES = 256
 
-# The catalog fingerprint is a SHA-256 over every row of every document, so it is
-# wasteful to recompute on every request (it runs before the surface-cache lookup,
-# so even cache HITs pay it). The catalog content is fully determined by the db
-# file's mtime — the same freshness signal the datum store keys its own catalog
-# cache on — so memoize the fingerprint per (db_file, mtime_ns). A write bumps the
-# mtime (the store guarantees this), yielding a new key and a fresh fingerprint.
-_FINGERPRINT_MEMO: dict[tuple[str, int], str] = {}
-_FINGERPRINT_MEMO_MAX_ENTRIES = 64
-
-
 def _catalog_fingerprint(catalog: Any) -> str:
     digest = hashlib.sha256()
     for document in catalog.documents:
@@ -546,6 +642,19 @@ def _catalog_fingerprint(catalog: Any) -> str:
     return digest.hexdigest()
 
 
+def _injected_fingerprint(*payloads: Any) -> str:
+    """A stable digest of the caller-supplied answers that ride the payload.
+
+    Cheap: these are small dicts (one entry per document, a coverage block), not
+    the catalog. Hashed rather than embedded so the cache key stays a small tuple.
+    """
+    digest = hashlib.sha256()
+    for payload in payloads:
+        digest.update(_json_text(payload or {}).encode("utf-8"))
+        digest.update(b"\x1e")
+    return digest.hexdigest()
+
+
 def _surface_cache_key(
     *,
     db_file: str,
@@ -555,6 +664,7 @@ def _surface_cache_key(
     enabled_lens_ids: frozenset[str] | None = None,
     hash_policy: str = "mss_sha256_v1",
     catalog_fingerprint: str | None = None,
+    injected_fingerprint: str = "",
 ) -> tuple[Any, ...]:
     fingerprint = catalog_fingerprint if catalog_fingerprint is not None else _catalog_fingerprint(catalog)
     # The enabled-lens policy changes the rendered display values, so it MUST be
@@ -566,9 +676,14 @@ def _surface_cache_key(
         fingerprint,
         lens_key,
         hash_policy,
+        injected_fingerprint,
         _as_text(query.get("document")),
         _as_text(query.get("row")),
         _as_text(query.get("sandbox_filter")),
+        # Part of the KEY, not just the filter: `system` is four instances' core sandbox,
+        # so without the msn two instances' surfaces would share one cached payload and
+        # whichever rendered first would answer for both.
+        _as_text(query.get("msn_filter")),
         _as_text(query.get("document_filter")).lower(),
         _normalize_sort_key(
             query.get("document_sort"),
@@ -610,18 +725,62 @@ class WorkbenchUiReadService:
         if mss_index is not None:
             version_hash = mss_document_hash(document_closure_to_mss(document, index=mss_index))
         else:
-            version_hash = _as_text(build_document_version_identity(document).get("version_hash"))
+            # Prefer the hash the STORE already computed, with the same engine, at
+            # write time. Recomputing it here means hashing every row of every
+            # document just to list them — the 138 MB read this whole path exists
+            # to avoid. Verified against the live corpus: 582 documents carry a
+            # hash and 582 of them match the recomputed value exactly, 0 mismatches.
+            #
+            # An entry with no carried hash falls through to the recompute, which
+            # needs the rows and therefore a real document. That case is rare and
+            # small by construction: it is a pending create, or a document whose
+            # append re-keyed it (the carried hash is cleared there rather than
+            # published against content that has moved).
+            version_hash = _as_text(getattr(document, "version_hash", ""))
+            if version_hash and _as_text(
+                getattr(document, "version_hash_policy", MSS_VERSION_HASH_POLICY)
+            ) not in ("", MSS_VERSION_HASH_POLICY):
+                # Computed under a DIFFERENT policy: that is not this render's
+                # answer, and publishing it would be a confident wrong hash.
+                version_hash = ""
+            if not version_hash and hasattr(document, "rows"):
+                version_hash = _as_text(
+                    build_document_version_identity(document).get("version_hash")
+                )
+            # A summary with no carried hash is left BLANK rather than loaded. The
+            # only entries that reach here are ones a pending append re-keyed, and
+            # loading one to hash it costs that document's whole row set — 42,003
+            # rows / ~450 MB for `registrar/address_nodes`, on a list render, which
+            # is the exact cost this path exists to remove. Blank says "not
+            # computed", which is true and cheap; the value returns on the next
+            # catalog write, when the index is rebuilt with the hash in hand.
         display_name = _document_display_name(document)
+        sandbox = _document_sandbox(document)
         return {
             "document_id": document.document_id,
             "document_name": document.document_name,
             "canonical_name": _as_text(document.canonical_name),
             "label": display_name,
+            "sandbox": sandbox,
+            # Six documents in this corpus are named "anchor" and are otherwise
+            # indistinguishable in a flat list. The sandbox is what tells them
+            # apart and it is already in the id, so the qualified form is derived
+            # here rather than stored.
+            "qualified_label": f"{sandbox} / {display_name}" if sandbox else display_name,
             "source_kind": document.source_kind,
             "row_count": int(document.row_count),
             "version_hash": version_hash,
             "version_hash_short": _short_hash(version_hash),
             "is_anchor": bool(document.is_anchor),
+            # Carried from the index projection (a summary) or the document's own
+            # metadata — the Compendium gallery keys its icons on it. "" draws the
+            # generic glyph.
+            "archetype": _as_text(getattr(document, "archetype", ""))
+            or (
+                _as_text((getattr(document, "document_metadata", None) or {}).get("archetype"))
+                if isinstance(getattr(document, "document_metadata", None), dict)
+                else ""
+            ),
             "selected": False,
         }
 
@@ -658,8 +817,12 @@ class WorkbenchUiReadService:
             # closure (matching recompile_datum_semantics); semantic_hash + the
             # other derived fields stay on the engine fold (as the migration left
             # them). Default mode keeps the engine hyphae_hash.
+            # `document=` matters: a datum address is a document-local coordinate and
+            # 7,241 of them are claimed by more than one document, so a bare address
+            # would resolve through whichever document the tenant index happens to hold
+            # — here, while rendering the document that contains the row.
             _binary_closure = (
-                datum_closure_to_mss(row.datum_address, index=mss_index)
+                datum_closure_to_mss(row.datum_address, index=mss_index, document=document)
                 if mss_index is not None else None
             )
             if _binary_closure is not None:
@@ -672,10 +835,23 @@ class WorkbenchUiReadService:
             primary_value_token = _as_text(getattr(recognized, "primary_value_token", ""))
             render_hints = dict(getattr(recognized, "render_hints", {}) or {})
             diagnostics = tuple(getattr(recognized, "diagnostic_states", ()) or ())
-            reference_bindings = [
-                binding.to_dict() if hasattr(binding, "to_dict") else dict(binding)
-                for binding in (getattr(recognized, "reference_bindings", ()) or ())
-            ]
+            # Each binding gets its OWN lens, resolved from its own expected value kind.
+            # The row-level lens below is resolved from the FIRST recognized family, which
+            # is right for a single-value row and wrong for a record row: an offering row
+            # leads with an lcl reference, so a row-level lens would render its price with
+            # the node-address lens. A price cell shows "$4.50" because the binding that
+            # holds it asked for its own overlay.
+            reference_bindings = []
+            for binding in getattr(recognized, "reference_bindings", ()) or ():
+                entry = binding.to_dict() if hasattr(binding, "to_dict") else dict(binding)
+                binding_lens = resolve_datum_lens(
+                    primary_value_kind=entry.get("expected_value_kind"),
+                    enabled_lens_ids=enabled_lens_ids,
+                )
+                token = _as_text(entry.get("value_token"))
+                entry["resolved_lens"] = binding_lens.lens_id
+                entry["display_value"] = binding_lens.lens.decode(token) if token else ""
+                reference_bindings.append(entry)
             lens_resolution = resolve_datum_lens(
                 recognized_family=recognized_family,
                 primary_value_kind=render_hints.get("primary_value_kind"),
@@ -747,36 +923,62 @@ class WorkbenchUiReadService:
         portal_domain: str,
         surface_query: dict[str, Any] | None = None,
         enabled_lens_ids: frozenset[str] | None = None,
+        publication_index: dict[str, Any] | None = None,
+        sandbox_sources: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        # ``publication_index`` and ``sandbox_sources`` are INJECTED rather than read
+        # here. Both derive from the private directory — held stills, the contact
+        # card — and this service is pure over the catalog. Reaching for a filesystem
+        # from inside ``micyte.tools`` would make the core depend on an instance's
+        # layout, which is the direction the fnd/micyte boundary test forbids. The
+        # fnd_app runtime owns the private dir and hands the answer in as plain data.
         del portal_domain
         query = dict(surface_query or {})
-        # The catalog read is already cached + correctly invalidated by the
-        # datum store (mtime + explicit pop on every write), so it is the
-        # cheap, authoritative freshness signal we fingerprint the cache on.
-        catalog = self._datum_store.read_authoritative_datum_documents(
-            AuthoritativeDatumDocumentRequest(tenant_id=portal_instance_id)
-        )
         hash_policy = _canonical_hash_policy()
-        # Build the closure index ONLY in binary mode (default mode never needs
-        # it, so there's zero added cost when the flag is unset).
-        mss_index = build_catalog_index(catalog) if hash_policy == _MSS_BINARY_POLICY else None
-        # Memoize the (expensive) catalog fingerprint by db mtime — see
-        # _FINGERPRINT_MEMO. Falls back to a direct compute if the file can't
-        # be stat'd (then the catalog itself would be empty/unavailable anyway).
-        try:
-            _mtime_ns = os.stat(self._db_file).st_mtime_ns
-        except OSError:
-            _mtime_ns = -1
-        if _mtime_ns < 0:
-            fingerprint = _catalog_fingerprint(catalog)
+        # The BINARY policy derives a document's identity from its tenant-wide
+        # downward closure, so it genuinely needs every document's rows and keeps
+        # the whole-catalog read. The default policy — the one production runs —
+        # needs names, counts and a per-document hash, all of which the rows-free
+        # index carries. Reading the catalog for it parsed a 138 MB blob into
+        # ~460 MB of objects on every cold shell render.
+        binary_mode = hash_policy == _MSS_BINARY_POLICY
+        catalog: Any = None
+        mss_index: dict[str, Any] | None = None
+        if binary_mode:
+            catalog = self._datum_store.read_authoritative_datum_documents(
+                AuthoritativeDatumDocumentRequest(tenant_id=portal_instance_id)
+            )
+            mss_index = build_catalog_index(catalog)
+            documents: list[Any] = list(catalog.documents)
+            catalog_warnings: list[str] = list(catalog.warnings)
         else:
-            fp_key = (str(self._db_file), _mtime_ns)
-            fingerprint = _FINGERPRINT_MEMO.get(fp_key)
-            if fingerprint is None:
-                fingerprint = _catalog_fingerprint(catalog)
-                if len(_FINGERPRINT_MEMO) >= _FINGERPRINT_MEMO_MAX_ENTRIES:
-                    _FINGERPRINT_MEMO.clear()
-                _FINGERPRINT_MEMO[fp_key] = fingerprint
+            index = self._datum_store.read_document_index(
+                AuthoritativeDatumDocumentRequest(tenant_id=portal_instance_id)
+            )
+            documents = list(index.documents)
+            catalog_warnings = list(index.warnings)
+        # The db file's mtime IS the fingerprint. The previous hash — SHA-256 over
+        # every row of every document — was already memoized by (db_file, mtime_ns),
+        # so it was a pure function of the mtime and could never distinguish two
+        # states the mtime did not. Using it directly drops a ~138 MB transient
+        # string per write-generation and is the same cache key.
+        try:
+            fingerprint = f"mtime:{os.stat(self._db_file).st_mtime_ns}"
+            freshness_known = True
+        except OSError:
+            if catalog is not None:
+                # Binary mode read the catalog anyway, so its content IS a freshness
+                # signal and caching stays safe.
+                fingerprint, freshness_known = _catalog_fingerprint(catalog), True
+            else:
+                # The default path never reads the catalog, so there is nothing to
+                # fingerprint and no freshness signal at all. The constant `""` this
+                # used to fall back to did the OPPOSITE of the "makes the cache a
+                # miss" it claimed: an identical key on every request is a permanent
+                # HIT, so the first surface computed after the stat failed would be
+                # served for the life of the process, through any number of writes.
+                # No signal means no caching — compute every time and store nothing.
+                fingerprint, freshness_known = "", False
         cache_key = _surface_cache_key(
             db_file=str(self._db_file),
             portal_instance_id=portal_instance_id,
@@ -785,8 +987,13 @@ class WorkbenchUiReadService:
             enabled_lens_ids=enabled_lens_ids,
             hash_policy=hash_policy,
             catalog_fingerprint=fingerprint,
+            # The injected answers ride the rendered payload, so they MUST be part
+            # of the key. Publishing a still changes the publication verdict without
+            # touching a single datum row — the catalog fingerprint would be
+            # identical and the cache would keep serving "not compiled" forever.
+            injected_fingerprint=_injected_fingerprint(publication_index, sandbox_sources),
         )
-        cached = _GLOBAL_SURFACE_CACHE.get(cache_key)
+        cached = _GLOBAL_SURFACE_CACHE.get(cache_key) if freshness_known else None
         if cached is not None:
             # The runtime bundle builder mutates the returned model in place
             # (schema / request_contract stamping, navigation decoration), so
@@ -796,16 +1003,19 @@ class WorkbenchUiReadService:
         result = self._compute_surface(
             portal_instance_id=portal_instance_id,
             query=query,
-            catalog=catalog,
+            documents=documents,
+            catalog_warnings=catalog_warnings,
             enabled_lens_ids=enabled_lens_ids,
             mss_index=mss_index,
+            publication_index=publication_index,
+            sandbox_sources=sandbox_sources,
         )
 
         # Directive overlays are live, advisory annotations served from a
         # separate subsystem. Only memoize projections that resolved no
         # overlay, so an overlay can never be served stale; everything else in
         # the projection is fully determined by the catalog fingerprint.
-        if result.get("overlay") is None:
+        if freshness_known and result.get("overlay") is None:
             if len(_GLOBAL_SURFACE_CACHE) >= _SURFACE_CACHE_MAX_ENTRIES:
                 _GLOBAL_SURFACE_CACHE.clear()
             _GLOBAL_SURFACE_CACHE[cache_key] = copy.deepcopy(result)
@@ -816,9 +1026,12 @@ class WorkbenchUiReadService:
         *,
         portal_instance_id: str,
         query: dict[str, Any],
-        catalog: Any,
+        documents: list[Any],
+        catalog_warnings: list[str],
         enabled_lens_ids: frozenset[str] | None = None,
         mss_index: dict[str, Any] | None = None,
+        publication_index: dict[str, Any] | None = None,
+        sandbox_sources: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         selected_document_id = _as_text(query.get("document"))
         selected_row_id = _as_text(query.get("row"))
@@ -846,18 +1059,27 @@ class WorkbenchUiReadService:
         )
 
         sandbox_filter = _as_text(query.get("sandbox_filter"))
-        documents = list(catalog.documents)
+        msn_filter = _as_text(query.get("msn_filter"))
+        documents = list(documents)
         if sandbox_filter:
-            # Per-tool sandbox scoping (added 2026-05-17 for the Example Farm
+            # Per-tool sandbox scoping (added 2026-05-17 for the agro_erp
             # workbench surface). Documents are kept when the canonical
             # document_id segment ``.{sandbox}.`` matches the requested
             # sandbox token. Tools that need to show the entire tenant
             # corpus (Workbench-UI) leave sandbox_filter unset.
+            #
+            # `msn_filter` is the other half of the address. Since 2026-08-14 four
+            # instances keep their core sandbox under the name `system`, so the sandbox
+            # marker alone listed all four together — one farm's anthology beside another's
+            # — and every downstream selection (auto-select, prev/next, the editor) could
+            # step into a foreign instance. The pair is the address; the filter is too.
             marker = f".{sandbox_filter}."
+            msn_marker = f".{msn_filter}." if msn_filter else ""
             documents = [
                 document
                 for document in documents
                 if marker in _as_text(document.document_id)
+                and (not msn_marker or msn_marker in _as_text(document.document_id))
             ]
         document_rows = [
             self._build_document_entry(
@@ -882,7 +1104,18 @@ class WorkbenchUiReadService:
         if not selected_document_id and document_rows:
             selected_document_id = _preferred_document_id(document_rows)
 
-        active_document = next((document for document in documents if document.document_id == selected_document_id), None)
+        # The ONE document whose rows are actually rendered. In binary mode the
+        # documents already carry their rows; otherwise they are summaries and this
+        # is the single targeted read — the median document in the live corpus is
+        # 6 KB, against 138 MB for all of them.
+        active_document = next(
+            (document for document in documents if document.document_id == selected_document_id),
+            None,
+        )
+        if active_document is not None and not hasattr(active_document, "rows"):
+            active_document = self._datum_store.read_authoritative_document(
+                tenant_id=portal_instance_id, document_id=selected_document_id
+            )
         active_document_row = next((document for document in document_rows if document["document_id"] == selected_document_id), None)
         for document in document_rows:
             document["selected"] = document["document_id"] == selected_document_id
@@ -972,9 +1205,21 @@ class WorkbenchUiReadService:
                 _as_text((active_document_row or {}).get("source_kind")),
                 _as_text((active_document_row or {}).get("canonical_name")),
             ),
+            "canonical_name": _as_text((active_document_row or {}).get("canonical_name")),
+            "sandbox": _as_text((active_document_row or {}).get("sandbox")),
+            # The rename gate. An anchor is its sandbox's root document and the write
+            # path refuses to rename one; carrying the fact here is what lets the
+            # editor decline to offer the affordance rather than offering a door the
+            # server then closes.
+            "is_anchor": bool((active_document_row or {}).get("is_anchor")),
             "version_hash": document_version_hash,
             "version_hash_short": document_version_hash_short,
             "row_count": int((active_document_row or {}).get("row_count") or 0),
+            # Whether this document has been compiled into a resource, and whether
+            # that copy is current. Absent (rather than "unpublished") when the
+            # caller supplied no index — "not published" and "not computed" are
+            # different facts and the surface must not spell them the same way.
+            "publication": (publication_index or {}).get(selected_document_id),
         }
         selected_row_summary = {
             "datum_address": _as_text((selected_row or {}).get("datum_address")),
@@ -1125,7 +1370,7 @@ class WorkbenchUiReadService:
             "selected_row_hyphae_hash_short": selected_row_summary["hyphae_hash_short"],
             "overlay": overlay,
             "overlay_events": overlay_events,
-            "warnings": list(catalog.warnings),
+            "warnings": list(catalog_warnings),
             "navigation": navigation,
             "surface_payload": {
                 "kind": "sql_authority_lens",
@@ -1166,9 +1411,20 @@ class WorkbenchUiReadService:
                         "sticky_header": True,
                         "columns": _document_table_columns(source_visibility=source_visibility),
                         "rows": document_rows,
+                        "sandbox_groups": _sandbox_groups(
+                            document_rows, active_sandbox=sandbox_filter
+                        ),
+                        # Empty means the corpus-wide reflective view, which is what
+                        # Workbench-UI opens in. Distinct from the "system" sandbox,
+                        # which is a real sandbox holding three documents.
+                        "active_sandbox": sandbox_filter,
+                        "document_filter": document_filter,
                         "selected_document_id": selected_document_id,
                         "selected_marker": "selected",
                     },
+                    # What resources the sandbox in view DECLARES it uses, with the
+                    # resolver's verdicts. Injected; see read_surface's signature.
+                    "sandbox_sources": sandbox_sources or {},
                     "datum_grid": {
                         "sticky_header": True,
                         "columns": _datum_grid_columns(workbench_lens=workbench_lens),

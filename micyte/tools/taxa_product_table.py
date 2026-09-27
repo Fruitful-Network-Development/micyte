@@ -23,8 +23,14 @@ from micyte.core.datum_ops.datum_resolve import cached_index
 from micyte.core.datum_ops.node_addrs import parent_of
 from micyte.state_machine.portal_shell.shell_schemas import WORKBENCH_UI_TOOL_ROUTE
 
-from ._archetype import find_named_document, read_sandbox_catalog, resolve_tool_sandbox
+from ._archetype import (
+    find_local_domain,
+    find_named_document,
+    read_sandboxes_catalog,
+    resolve_tool_sandbox,
+)
 from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from .product_document_view import _find_named, build_product_rows
 from .taxonomy_domain_viewer import (
@@ -81,6 +87,9 @@ class TaxaProductTable:
     route = WORKBENCH_UI_TOOL_ROUTE
     # Embedded-only pane (composed into the Taxonomy Domain tab) — like network_map,
     # it is never independently eligible, so it stays out of the menubar palette.
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -89,16 +98,19 @@ class TaxaProductTable:
         self, *, authority_db_file: Path | None, sandbox_id: str, document_id: str,
         datum_address: str, extra_query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        # The farm's own sandbox beside the taxonomy's (2026-09-25); the whole catalog only
+        # for a blank request the resolver answers with the first farm by shape.
+        docs, err = read_sandboxes_catalog(
+            authority_db_file, tenant_id=_TENANT_DEFAULT, sandboxes=(_as_text(sandbox_id), _TAXONOMY_SANDBOX))
         if err:
             return _notice(err)
         # Honor the selected farm (agronomics FARM selector); a farm without a product_profiles
-        # doc (e.g. a newly-onboarded farm) shows an empty notice rather than trapp's products.
+        # doc (e.g. a newly-onboarded farm) shows an empty notice rather than another farm's products.
         product_sandbox = resolve_tool_sandbox(sandbox_id, docs=docs)
         product_doc = _find_named(docs, product_sandbox, "product_profiles")
         if product_doc is None:
             return _notice(f"No product profiles for {product_sandbox.replace('_', ' ').title()} yet.")
-        lcl_index = cached_index(_find_named(docs, product_sandbox, "lcl"))
+        lcl_index = cached_index(find_local_domain(docs, sandbox=product_sandbox))
         agro_txa = cached_index(_find_named(docs, product_sandbox, "txa"))
         rows = build_product_rows(product_doc, lcl_index=lcl_index, txa_index=agro_txa)
 
@@ -127,9 +139,9 @@ class TaxaProductTable:
             products.append({
                 "taxon": taxon,
                 "name": name,
-                # The lcl product-leaf node (1-1-5-*) — the join to inventory/contracts. The
-                # Flora & Fauna "add" affordance passes this as inventory_new so the PLAN-tab
-                # inventory manager opens with this product pre-queued.
+                # The lcl product-leaf node (1-1-5-*) — the product's identity, the join the
+                # modern offer ledger and the contracts read. (The old "add to inventory"
+                # affordance that consumed it left with the old-model panes.)
                 "product_node": _as_text((by_field.get("product_id") or {}).get("magnitude")),
                 "subtitle": taxon_common(taxon),
                 "common": taxon_common(taxon),

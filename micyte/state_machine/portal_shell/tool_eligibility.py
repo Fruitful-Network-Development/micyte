@@ -3,7 +3,7 @@
 Pure function. Given a selected datum (document + address) and the tool
 registry, returns the subset of palette tools whose `applies_to_archetype`
 or `applies_to_source_kind` intersects the document's archetype/source_kind
-set. Extensions (`is_extension=True`) are never included in the palette.
+set.
 
 The archetype set is derived from:
   1. `datum_doc.document_metadata.get("archetype")` if a non-empty string,
@@ -70,7 +70,7 @@ def recognize_applicable_tools(
 ) -> tuple[PortalToolRegistryEntry, ...]:
     """Return the palette-eligible subset of `registry` for the given datum.
 
-    A tool is eligible when it is NOT an extension and any of:
+    A tool is eligible when any of:
       - its `applies_to_archetype` intersects the document's archetype set, OR
       - its `applies_to_source_kind` intersects the document's source_kind, OR
       - its `applies_to_hyphae_value` intersects ``hyphae_values`` — the canonical
@@ -100,8 +100,6 @@ def recognize_applicable_tools(
 
     eligible: list[PortalToolRegistryEntry] = []
     for entry in registry:
-        if entry.is_extension:
-            continue
         if archetype_set & frozenset(entry.applies_to_archetype):
             eligible.append(entry)
             continue

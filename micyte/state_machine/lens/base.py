@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from micyte.core.datum_ops.fiat_datum import FiatChainError, format_cents, parse_cents
+
 
 def _as_text(value: object) -> str:
     if value is None:
@@ -109,6 +111,53 @@ class NumericHyphenLens(TrimmedStringLens):
         parts = value.split("-")
         if any(not part.isdigit() for part in parts):
             return ("numeric_hyphen_invalid",)
+        return ()
+
+
+class FiatCentsLens(TrimmedStringLens):
+    """A price magnitude shown as currency: canonical ``450`` displays as ``$4.50``.
+
+    The canonical value is the integer the datum row actually carries, because that is what
+    the reference means — a magnitude of 1 against the fiat babelette is one cent. Without
+    this lens the raw workbench shows a bare ``450`` in a cell whose neighbours are bit
+    strings and node addresses, and there is nothing on the row to say it is money.
+
+    Symmetric, unlike ``BinaryTextLens``: an operator editing a price cell types ``$4.50``
+    and the stored value is ``450``. Both directions go through
+    :mod:`micyte.core.datum_ops.fiat_datum`, so the workbench and the write path cannot
+    disagree about what a price is — and neither rounds one through a float.
+    """
+
+    lens_id = "fiat_cents"
+
+    def decode(self, canonical_value: Any) -> str:
+        token = _as_text(canonical_value)
+        if not token:
+            return ""
+        try:
+            return format_cents(token)
+        except FiatChainError:
+            # Not a whole-cent magnitude. Show it unchanged rather than a guess: a cell
+            # that cannot be read as money is a fact about the row, not about the lens.
+            return token
+
+    def encode(self, display_value: Any) -> str:
+        token = _as_text(display_value)
+        if not token:
+            return ""
+        try:
+            return str(parse_cents(token))
+        except FiatChainError:
+            return token
+
+    def validate_display(self, display_value: Any) -> tuple[str, ...]:
+        token = _as_text(display_value)
+        if not token:
+            return ("price_required",)
+        try:
+            parse_cents(token)
+        except FiatChainError:
+            return ("price_invalid",)
         return ()
 
 

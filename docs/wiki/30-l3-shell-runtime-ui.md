@@ -71,9 +71,9 @@ and `_compute_surface()` (line 630). **This is the READ path.**
 | Path | Role | LOC |
 |---|---|---|
 | `v2_portal_shell.js` | Bundle loader. Reads `PORTAL_SHELL_MODULE_CONTRACTS`, loads modules in order, owns module-registration fatal handling. | 401 |
-| `v2_portal_shell_core.js` | The driver. Owns runtime POSTs (`loadShell`/`loadRuntimeView`), envelope validation (`applyEnvelope`), region dispatch (`renderRegions`), chrome (`applyChrome`), history sync, tool-action/transition dispatch, the menubar tool palette mount, and the sandbox selector. | 902 |
-| `v2_portal_shell_region_renderers.js` | `PortalShellRegionRenderers` — activity-bar + control-panel renderers. | 952 |
-| `v2_portal_workbench_renderers.js` | `PortalShellWorkbenchRenderer.render` — the central workbench renderer (datum grid, document tables, mutation forms). | 3752 |
+| `v2_portal_shell_core.js` | The driver. Owns runtime POSTs (`loadShell`/`loadRuntimeView`), envelope validation (`applyEnvelope`), region dispatch (`renderRegions`), chrome (`applyChrome`), history sync, tool-action/transition dispatch and the menubar tool palette mount. `openCoreTool` is query navigation (`setSurfaceQuery` + `loadShell`), not an overlay open. The sandbox `<select>` went with the control panel (2026-08-16); `switchToSandbox` remains as the one switch path, called by the instance switcher. | 912 |
+| `v2_portal_shell_region_renderers.js` | `PortalShellRegionRenderers` — the ACTIVITY BAR and the instance switcher pinned to its foot; that is the whole of the shell's chrome. The rail marks each item `data-core-tool` + `data-nav-kind` (`tool`/`channel`). The control-panel renderer was deleted with the region on 2026-08-16 (1303 → 290 lines). | 290 |
+| `v2_portal_workbench_renderers.js` | `PortalShellWorkbenchRenderer.render` — the central workbench renderer, and the only region renderer with content. Dispatches on the surface payload: the **Compendium** (crumb strip + folder shelf / document gallery / document face / **Sources**), the **tool host** (`renderWorkbenchToolHost` — every tool, hub and channel), a surface's own nav (`renderSectionNav`, `renderSelectionStrip`, `renderInstallTarget`), the datum grid, document tables and mutation forms. Falls back to `envelope.surface_payload` when the region omits its copy. | 13356 |
 | `v2_portal_system_workspace.js` | `PortalSystemWorkspaceRenderer` — the only renderer that understands the ordered sandbox→file→datum→object focus path. | 579 |
 | `v2_portal_tool_surface_adapter.js` | `PortalToolSurfaceAdapter` — shared request-building + loading/error/empty wrappers for tool surfaces. | 407 |
 | `v2_portal_tool_palette.js` | `PortalToolPalette` — fetches `/portal/api/tools/eligible` (or `/visualizers/for-sandbox`) and renders the menubar search/result list. | 208 |
@@ -118,11 +118,17 @@ across 3 roots — SYSTEM (`system.root` + `system.tools.workbench_ui` +
 `system.tools.agro_erp`), NETWORK (`network.root`), and UTILITIES
 (root + extensions + grantee-profile + tools + peripherals + a legacy
 tool-exposure entry). `build_portal_tool_registry_entries()`
-(`shell_registry.py:141`) returns 2 palette tools (`agro_erp`, `workbench_ui`)
-plus 6 `is_extension=True` Utilities extensions. Each `PortalToolRegistryEntry`
-(`shell.py:476`) declares `applies_to_archetype`/`applies_to_source_kind` used by
-the palette and a reserved-but-unenforced `manipulates_datum_kinds`
-(`shell.py:493`).
+(`shell_registry.py:249`) returns the 2 tool SURFACES (`agro_erp`,
+`workbench_ui`). Each `PortalToolRegistryEntry` declares
+`applies_to_archetype`/`applies_to_source_kind`, used by the palette.
+
+The `is_extension` flag and the reserved-but-unenforced `manipulates_datum_kinds`
+were removed by the Phase 3 tool taxonomy. No entry had raised `is_extension`
+since the operator extension tools were dissolved, and nothing ever read
+`manipulates_datum_kinds` — the question it was reserved for is answered by
+[`micyte/ports/datum_write_policy`](../../micyte/ports/datum_write_policy/) and,
+for unattended writers, by [`micyte/automation`](../../micyte/automation/), where
+a routine's declared writes ARE the authorization request.
 
 ### Runtime entrypoints
 
@@ -135,10 +141,12 @@ the palette and a reserved-but-unenforced `manipulates_datum_kinds`
 3. `_bundle_for_surface` (`:1268`) builds a per-surface region bundle:
    - `system.root` **delegates to the unified workbench** (`build_portal_workbench_ui_bundle`) and rewrites the WORKBENCH-UI identifiers back to system-root identity (`:1297`–`:1342`).
    - tool surfaces (`workbench_ui`, `agro_erp`) dispatch through `_TOOL_SURFACE_BUNDLE_BUILDERS` (`:1205`).
-   - `network.root` / `utilities.*` build their own control-panel + workbench regions, each wrapped by `attach_region_family_contract`.
-4. `build_shell_composition_payload` (`shell.py:1553`) assembles the activity bar,
-   control panel, workbench, the retired-but-present interface panel, and the
-   visualization panel into a `shell_composition`.
+   - `network.root` / `utilities.*` build their own workbench region, wrapped by `attach_region_family_contract`, and stamp their own nav onto the surface payload (`_with_utilities_section_nav`, `_with_network_selection_strip`, `_install_target_control`).
+4. `build_shell_composition_payload` assembles TWO regions into a
+   `shell_composition`: the activity bar and the workbench. The interface panel
+   went with the tool overlay; the control panel was retired 2026-08-16. The
+   workbench region omits its `surface_payload` when it is the envelope's own, so
+   the payload crosses the wire once.
 5. `build_portal_runtime_envelope` returns the envelope (schema
    `mycite.v2.portal.runtime.envelope.v1`).
 
@@ -150,8 +158,9 @@ appends an audit record, invalidates the projection cache).
 
 | Route | Handler | Purpose |
 |---|---|---|
-| `GET /portal/system` | `_render_surface(SYSTEM_ROOT_SURFACE_ID)` (`:1625`) | Serve the shell HTML for the system surface. |
-| `GET /portal/system/tools/<slug>` | `:1629` | Legacy tool slugs (`workbench-ui`/`agro-erp`/`cts-gis`) **302-redirect** to `/portal/system?<canonical query>`. |
+| `GET /portal/compendium` | `_render_surface(SYSTEM_ROOT_SURFACE_ID)` | Serve the shell HTML for the system surface — **the canonical route since 2026-08-16**. |
+| `GET /portal/system` | — | **Query-preserving 302** to `/portal/compendium`. The page was renamed so it stops colliding with the `system` sandbox; the surface id is unchanged. |
+| `GET /portal/system/tools/<slug>` | `:1629` | Legacy tool slugs (`workbench-ui`/`agro-erp`/`cts-gis`) **302-redirect** to the canonical route + query. |
 | `GET /portal/network`, `/portal/utilities`, `/portal/utilities/{extensions,grantee-profile,tools,peripherals}` | `:1666`–`:1691` | Serve the shell for each surface. |
 | `GET /portal/utilities/{tool-exposure,integrations}` | `:1693`,`:1701` | 302-redirect to the new surfaces. |
 | `GET /portal/api/tools/eligible` | `:1707` | Palette eligibility for a selected datum. |
@@ -173,18 +182,18 @@ shell request + the JS asset manifest into `portal.html`. `_runtime_response`
 
 1. On boot it reads the embedded bootstrap request and `loadShell()`
    (`shell_core.js:524`) POSTs it to `/portal/api/v2/shell`.
-2. `applyEnvelope` (`:487`) validates the envelope schema, then `applyChrome`
-   (`:259`) sets shell layout attributes and `renderRegions` (`:357`) resolves
-   each region's registered renderer module and dispatches:
-   `renderActivityBar` + `renderControlPanel` (region renderers), `render`
-   (workbench renderer), and `renderVisualizationPanel` (`:395`).
-3. Navigation is **direct** — activity items and control-panel entries carry an
-   `href` (or a `shell_request` payload to POST), not reducer transitions
-   (`portal_shell_runtime.py:284`,`:318`). `dispatchTransition` (`:611`) early-
+2. `applyEnvelope` (`:630`) validates the envelope schema, then `applyChrome`
+   (`:268`) sets shell layout attributes and `renderRegions` (`:344`) resolves
+   each region's registered renderer module and dispatches exactly two:
+   `renderActivityBar` (region renderers) and `render` (workbench renderer).
+   `renderControlPanel` and `renderVisualizationPanel` went with their regions;
+   a third region name in an envelope is now an error, not an extra pane.
+3. Navigation is **direct** — activity items carry an `href` (or a
+   `shell_request` payload to POST), not reducer transitions
+   (`portal_shell_runtime.py`). `dispatchTransition` (`:749`) early-
    returns unless `envelope.reducer_owned`, which is now always false — so it is
    effectively inert, matching the dead reducer.
-4. The **sandbox selector** (`:814`) and the **menubar tool palette**
-   (`mountMenubarToolPalette`, `:851`) both mutate `surface_query` on the current
+4. The **menubar tool search** (`mountMenubarToolSearch`) mutates `surface_query` on the current
    request and re-`loadShell()`. The palette appends picked tool-ids to
    `surface_query.tools`; the runtime turns each into a visualization-panel box.
 
@@ -267,7 +276,7 @@ than through a registered `MutationContractRuntimeHandler` subclass.
 **Partial**
 - "Document-processor" UX: the workbench renders a datum grid with lenses, but reads via a direct SQL→JSON projection, not the WORKBOOK-YAML runtime model the vision calls for. Read and write use different representations.
 - Mutation lifecycle: the NIMM contract (stage/validate/preview/apply/discard, lens-staged envelopes) is fully specified, but the live runtime implements it directly rather than via a `MutationContractRuntimeHandler` subclass; `StagingArea` is not the path the workbench grid uses.
-- Tool→datum applicability: `PortalToolRegistryEntry.manipulates_datum_kinds` is declared but not consumed by the eligibility predicate (`shell.py:493`).
+- Tool→datum applicability: eligibility is by `applies_to_archetype`/`applies_to_source_kind`, not by what a tool WRITES. What a caller may write is decided at the write, by `micyte/ports/datum_write_policy`. (`manipulates_datum_kinds`, a declared-but-unconsumed field that used to sit here, was removed rather than wired — a second statement of the same fact is what drifts.)
 
 **Absent**
 - A unified materialization pipeline where the read path also loads a sandbox as runtime WORKBOOK-YAML — see `70-yaml-materialization-pipeline.md` *(forward ref)*.

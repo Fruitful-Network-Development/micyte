@@ -20,13 +20,13 @@ from micyte.state_machine.portal_shell.shell_schemas import (
 )
 
 from ._archetype import (
-    find_named_document,
+    find_anchor,
     read_sandbox_catalog,
     resolve_tool_document,
     resolve_tool_sandbox,
 )
 from ._hops_dates import chrono_authority, hops_token_to_date
-from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from ._shared.utilities import row_head as _row_head
 from ._shared.utilities import row_tail_label as _row_tail_label
@@ -106,7 +106,7 @@ def build_geospatial_payload(
     options are a complete and self-invalidating cache key. That matters because one PLAN render
     projects the same farm_profile up to seven times (Plot, the Planting map, the calendar,
     Delegate, the consumption model, the FARM overview), and each pass decodes a HOPS coordinate
-    for every ring: on trapp that is 3650 plots × 7 ≈ 25k decodes, the dominant cost of the tab.
+    for every ring: on the largest farm that is 3650 plots × 7 ≈ 25k decodes, the dominant cost of the tab.
     **The returned payload is SHARED — treat it as read-only.** Deep-copying it costs more than the
     projection did (a 3650-plot collection is ~845k objects), so callers that need to annotate a
     feature must copy just that feature (see ``planting_map_viewer``). Spreading the result into a
@@ -308,7 +308,7 @@ def resolve_farm_scene(authority_db_file: Path | None, sandbox_id: str, document
     The authority decodes the HOPS day tokens stamped on features, so an ``as_of`` caller needs it
     alongside the doc; resolving both here avoids a second full catalog read just for the anchor.
     """
-    docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+    docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_as_text(sandbox_id))
     if err:
         return None, None, _error(err)
     sandbox = resolve_tool_sandbox(sandbox_id, docs=docs)
@@ -319,7 +319,7 @@ def resolve_farm_scene(authority_db_file: Path | None, sandbox_id: str, document
     )
     if doc is None:
         return None, None, _error("farm_profile document not found")
-    return doc, chrono_authority(find_named_document(docs, sandbox=sandbox, name="anchor")), None
+    return doc, chrono_authority(find_anchor(docs, sandbox=sandbox)), None
 
 
 class GeospatialProjectionViewer:
@@ -329,6 +329,9 @@ class GeospatialProjectionViewer:
     label = "Geospatial Projection"
     summary = "Field and plot polygons projected from the farm_profile HOPS filament."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ("hops_geospatial_filament",)
     applies_to_source_kind: tuple[str, ...] = ()
 
@@ -348,4 +351,6 @@ class GeospatialProjectionViewer:
         }
 
 
-register(GeospatialProjectionViewer())
+# register(GeospatialProjectionViewer())  # retired TASK-2026-08-14-002 Phase 1: the tool
+# surface was consolidated into farm_profile_viewer; the module survives as the geometry
+# library seven tools and the agro write runtime import.

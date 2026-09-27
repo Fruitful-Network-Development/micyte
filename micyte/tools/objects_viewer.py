@@ -14,12 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from micyte.adapters.sql import SqliteSystemDatumStoreAdapter
-from micyte.ports.datum_store import AuthoritativeDatumDocumentRequest
+from micyte.core.document_naming import document_in_sandbox
+from micyte.ports.datum_write_policy import DeclaredWrite
 from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
+from ._archetype import scoped_to_instance
 from ._registry import register
+from ._requirements import FARM
 from .object_profiles_view import build_object_rows
 
 _SCHEMA = "mycite.v2.portal.workbench.tool.object_manager.v1"
@@ -42,17 +45,33 @@ def _load_object_profiles(authority_db_file: Path | None, sandbox: str):
     if not authority_db_file or not sandbox:
         return None
     store = SqliteSystemDatumStoreAdapter(authority_db_file, allow_legacy_writes=False)
-    cat = store.read_authoritative_datum_documents(AuthoritativeDatumDocumentRequest(tenant_id=_TENANT))
-    return next((d for d in cat.documents if f".{sandbox}.object_profiles." in d.document_id), None)
+    # ONE sandbox (2026-09-25), scoped to the instance before the name filter: `system`
+    # names four instances' core sandbox, so the sandbox filter alone matched every farm's
+    # `object_profiles` and returned whichever came first.
+    documents = store.read_documents_by_sandbox(tenant_id=_TENANT, sandbox=sandbox)
+    return next(
+        (d for d in scoped_to_instance(documents)
+         if document_in_sandbox(d.document_id, sandbox)
+         and d.document_id.split(".")[3] == "object_profiles"),
+        None,
+    )
 
 
 class ObjectsViewer:
     """The typed-object list + profile-page launcher (Infrastructure & People)."""
 
     tool_id = "object_manager"
+    writes = (
+        DeclaredWrite(document_kind="object", action="create_object"),
+        DeclaredWrite(document_kind="object", action="save_object"),
+        DeclaredWrite(document_kind="object", action="delete_object"),
+    )
     label = "Infrastructure & People"
     summary = "Typed farm objects (barns, greenhouses, tractors, livestock, employees) — list, add, edit, remove."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ("hops_geospatial_filament", "samras_taxonomy")
     applies_to_source_kind: tuple[str, ...] = ()
 

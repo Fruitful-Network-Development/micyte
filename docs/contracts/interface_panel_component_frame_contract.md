@@ -2,7 +2,14 @@
 
 ## Status
 
-Canonical
+**RETIRED.** The `interface_panel` region went with the tool overlay, before the
+`control_panel` followed it on 2026-08-16. Tools render in the workbench now, addressed by
+`?tool=<id>` rather than opened into a sidebar, so there is no panel to frame.
+
+Kept for the component-frame model itself, which outlived the panel: the frame
+initialize / freeze / re-engage lifecycle is still how CTS-GIS composes, and
+`__MYCITE_V2_CONTAINER_RENDERERS` still dispatches on it. Read this for that model; do not
+read it as a description of a region that exists.
 
 ## Purpose
 

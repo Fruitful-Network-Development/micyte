@@ -28,6 +28,7 @@ Span/duration is NOT an ordinal address: event rows pair a stamp here with a
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Any
 
 EPOCH = date(2024, 1, 1)  # quadrennium 507 day 1 — a Monday
 DAYS_PER_QUADRENNIUM = 1461
@@ -47,6 +48,22 @@ QC_DENOTATIONS = (1462, 24, 60)
 HC_DENOTATIONS = (8, 24, 60)
 LC_DENOTATIONS = (32, 24, 60)
 _DENOTATIONS_BY_STRUCTURE = {LCL_QC: QC_DENOTATIONS, LCL_HC: HC_DENOTATIONS, LCL_LC: LC_DENOTATIONS}
+#: By the structure's LEAF ORDINAL — what a reference keeps across the local domain's
+#: re-rooting (2026-09-09: ``1-5-3`` became ``1-3-1-5-3`` and stayed hc). See
+#: ``micyte/core/datum_ops/event_vocabulary.py``.
+_DENOTATIONS_BY_ORDINAL = {2: QC_DENOTATIONS, 3: HC_DENOTATIONS, 4: LC_DENOTATIONS}
+
+
+def denotations_for(structure: Any) -> tuple[int, ...] | None:
+    """The radices of a chronology structure named by its lcl reference (either shape) or by
+    its ordinal; ``None`` for a reference that names no chronology."""
+    if isinstance(structure, int) and not isinstance(structure, bool):
+        return _DENOTATIONS_BY_ORDINAL.get(structure)
+    text = str(structure or "").strip()
+    if text in _DENOTATIONS_BY_STRUCTURE:
+        return _DENOTATIONS_BY_STRUCTURE[text]
+    tail = text.rsplit("-", 1)[-1] if text else ""
+    return _DENOTATIONS_BY_ORDINAL.get(int(tail)) if tail.isdigit() else None
 
 LUNATION_DAYS = 30  # fixed civil lunation; slot 31 is denotational headroom
 
@@ -117,7 +134,7 @@ def parse_ic_stamp(stamp: str, *, structure: str) -> tuple[int, int, int]:
     """Parse a cyclical stamp ``<day>[-<hh>[-<mm>]]`` against its structure's
     denotations. Returns (day, hour, minute); missing segments decode as 0.
     Day is 1-based; hour/minute are 0-based, per the structure radices."""
-    denotations = _DENOTATIONS_BY_STRUCTURE.get(str(structure))
+    denotations = denotations_for(structure)
     if denotations is None:
         raise ValueError(f"unknown cyclical structure: {structure!r}")
     token = str(stamp or "").strip()
@@ -243,6 +260,7 @@ __all__ = [
     "current_open_window",
     "cycle_start_year_of",
     "date_of_qc_day",
+    "denotations_for",
     "encode_mixed_radix_magnitude",
     "format_ic_stamp",
     "hc_day_of",

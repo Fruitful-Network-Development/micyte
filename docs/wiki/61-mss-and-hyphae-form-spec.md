@@ -96,7 +96,7 @@ self-describing binary sequence.
 
 ### 2. Hyphae today is a graph-closure derivation, with no focus exclusion
 
-`micyte/core/mss/datum_identity.py:126` — `derive_hyphae_chain`
+`micyte/core/mss/datum_identity.py:55` — `derive_hyphae_chain`
 walks the transitive dependency closure of a `datum_address`
 (`datum_identity.py:153` `_walk`), collects every reachable rudi address
 (`layer=0, value_group=0`; `datum_identity.py:163`), and returns the rudi
@@ -106,7 +106,7 @@ does **not** take a focus set and does **not** exclude any datums on the basis
 of focus (docstring, `datum_identity.py:130`).
 
 The production engine is the richer
-`micyte/adapters/sql/datum_semantics.py:209` —
+`micyte/core/datum_semantics/engine.py:346` —
 `build_document_semantics`, which per row computes a `semantic_hash`
 (`datum_semantics.py:226` `semantic_hash_for`, policy
 `HYPHAE_CHAIN_POLICY = "mos.hyphae_chain_v1"`, `:15`), a `hyphae_hash`, and a

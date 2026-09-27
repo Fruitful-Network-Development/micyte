@@ -29,11 +29,7 @@ from .node_ops import (
 )
 from .ops import Workbook
 from .refs import _head, _is_definition_head
-from .samras_deps import ANCHOR_SAMRAS_SOURCE, TXA_ID_COLLECTION
-
-# sheet → (anchor magnitude address, collection address) housekeeping mapping,
-# derived from the single anchor→sheet source map (no independent restatement).
-_HOUSEKEEPING = {sheet: (anchor_addr, TXA_ID_COLLECTION) for anchor_addr, sheet in ANCHOR_SAMRAS_SOURCE.items()}
+from .samras_deps import TXA_ID_COLLECTION, samras_magnitude_addr
 
 
 def _def_title_map(doc: Any) -> dict[str, str]:
@@ -91,13 +87,19 @@ def compile_workbook(baseline: Workbook, edited: Workbook) -> list[Any]:
             ops.append(DropNode(name, b_node))
             node_set_changed = True
 
-        if node_set_changed and name in _HOUSEKEEPING:
-            anchor_addr, collection_addr = _HOUSEKEEPING[name]
-            housekeeping.append((name, anchor_addr, collection_addr))
+        # Which anchor row denotes this sheet is DISCOVERED from the row's own
+        # `<name>-SAMRAS` tail label, not looked up in a per-sandbox address table: the
+        # table said lcl lived at 1-1-5, which is true of a farm anchor and false of the
+        # registrar's (see samras_deps). A sheet no anchor row denotes needs no
+        # housekeeping — that is the structure-only case, not a miss.
+        if node_set_changed and "anchor" in edited.names():
+            anchor_addr = samras_magnitude_addr(edited.sheet("anchor"), name)
+            if anchor_addr:
+                housekeeping.append((name, anchor_addr, TXA_ID_COLLECTION))
 
     for name, anchor_addr, collection_addr in housekeeping:
-        if "anchor" in edited.names():
-            ops.append(RecompileMagnitude("anchor", anchor_addr, name))
+        # An entry exists only when discovery found the row, so the anchor is present.
+        ops.append(RecompileMagnitude("anchor", anchor_addr, name))
         label = _collection_label(edited.sheet(name), collection_addr)
         if label is not None:
             ops.append(RebuildCollection(name, collection_addr, label))

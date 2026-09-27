@@ -93,20 +93,59 @@ def loads_json(value: str) -> Any:
     return json.loads(value)
 
 
-def connect_sqlite(db_file: str | Path) -> sqlite3.Connection:
+# How long a connection waits for a lock before raising "database is locked".
+# SQLite's default is 0 — the FIRST contended statement fails immediately. With
+# only a human clicking in the portal that never showed; with a background
+# writer (a scheduled inventory entry, a settlement callback) writing while a
+# page is being rendered, it is the ordinary case. 5s is long enough to cover a
+# single-document write on the 244 MB authority and short enough that a genuine
+# deadlock still surfaces as an error rather than a hang.
+_BUSY_TIMEOUT_MS = 5000
+
+
+# Columns added to a table AFTER it first shipped. `CREATE TABLE IF NOT EXISTS` leaves an
+# existing table alone, so a store that already carries the table in its first shape —
+# the live store did, on 2026-09-23, created by a suite that opened it through the
+# adapter before the column existed — needs the column added, once, idempotently.
+# (table, column) -> the column's DDL. Appending is safe; a column can never be removed here.
+_LATER_COLUMNS: dict[tuple[str, str], str] = {
+    ("datum_document_bitstream", "note"): "TEXT NOT NULL DEFAULT ''",
+}
+
+
+def _ensure_later_columns(connection: sqlite3.Connection) -> None:
+    for (table, column), ddl in _LATER_COLUMNS.items():
+        present = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if present and column not in present:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def connect_sqlite(db_file: str | Path, *, read_only: bool = False) -> sqlite3.Connection:
+    """A connection with the schema applied — or, ``read_only``, a connection that applies
+    NOTHING: no `CREATE IF NOT EXISTS`, no later column, no journal-mode change. The
+    default connect writes DDL to whatever store it is pointed at, which is how a test
+    that "measured the live store" created two tables on production (2026-09-22/23).
+    A reader that only reads opens read-only and cannot."""
     path = _db_path(db_file)
+    if read_only:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+        connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+        return connection
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(path))
     connection.row_factory = sqlite3.Row
+    connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript(SCHEMA_SQL)
+    _ensure_later_columns(connection)
     return connection
 
 
 @contextmanager
-def open_sqlite(db_file: str | Path):
-    connection = connect_sqlite(db_file)
+def open_sqlite(db_file: str | Path, *, read_only: bool = False):
+    connection = connect_sqlite(db_file, read_only=read_only)
     try:
         yield connection
     finally:

@@ -106,16 +106,17 @@ class PortalScope:
 
 @dataclass(frozen=True)
 class PortalShellChrome:
-    control_panel_collapsed: bool = False
+    """Shell chrome the operator can collapse — currently nothing.
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.control_panel_collapsed, bool):
-            raise ValueError("shell_chrome.control_panel_collapsed must be a bool")
+    Its one field was ``control_panel_collapsed``, and the control panel was
+    retired on 2026-08-16. The struct stays because ``chrome`` is part of the
+    persisted shell-state shape and travels through every reducer; a stored
+    ``control_panel_collapsed`` from an older session is read and ignored rather
+    than rejected, so an old bookmark still loads.
+    """
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "control_panel_collapsed": self.control_panel_collapsed,
-        }
+        return {}
 
     @classmethod
     def from_value(cls, payload: dict[str, Any] | None) -> PortalShellChrome:
@@ -123,9 +124,7 @@ class PortalShellChrome:
             return cls()
         if not isinstance(payload, dict):
             raise ValueError("shell_chrome must be a dict or null")
-        return cls(
-            control_panel_collapsed=payload.get("control_panel_collapsed") is True,
-        )
+        return cls()
 
 
 @dataclass(frozen=True)

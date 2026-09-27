@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from micyte.core.datum_ops import field_registry as _fr
+from micyte.ports.datum_write_policy import DeclaredWrite
 from micyte.state_machine.portal_shell.shell_schemas import (
     REGISTRAR_SANDBOX_TOKEN as _REGISTRAR,
 )
@@ -38,6 +39,7 @@ from micyte.state_machine.portal_shell.shell_schemas import (
 
 from ._archetype import document_sandbox, read_sandbox_catalog
 from ._registry import register
+from ._requirements import REGISTRAR
 from ._shared.utilities import as_text as _as_text
 from ._shared.utilities import row_head as _row_head
 from .entity_profile_table import build_entity_table_from_net
@@ -187,9 +189,16 @@ class RegistrarPortalViewer:
     """Search / view · edit · create entity profiles in the registrar sandbox."""
 
     tool_id = "registrar_portal"
+    writes = (
+        DeclaredWrite(document_kind="ag_profile", action="create_ag_profile"),
+        DeclaredWrite(document_kind="ag_profile", action="save_ag_profile"),
+    )
     label = "MSN Node Manager"
     summary = "Search, view, edit and create the registrar's entity profiles by MSN node."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = REGISTRAR
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True
@@ -198,7 +207,10 @@ class RegistrarPortalViewer:
         self, *, authority_db_file: Path | None, sandbox_id: str, document_id: str,
         datum_address: str, extra_query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        # The registrar sandbox and nothing else (2026-09-20): the map, the table and the
+        # detail are all registrar documents.
+        docs, err = read_sandbox_catalog(
+            authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_REGISTRAR)
         if err:
             return _notice(err)
         # One catalog read → one classification, reused for the map, the table and the

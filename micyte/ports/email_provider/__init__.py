@@ -1,0 +1,41 @@
+"""Email provider port: the mail an instance receives, and the mail it sends — contract only."""
+
+from .contracts import (
+    OPERATION_ALIAS_CREATE,
+    OPERATION_ALIAS_LIST,
+    OPERATION_ALIAS_REMOVE,
+    OPERATION_FORWARDING_SET,
+    OPERATION_IDENTITY_REMIND,
+    OPERATION_IDENTITY_VERIFY_REQUEST,
+    OPERATION_MAILBOX_LIST,
+    OPERATION_MESSAGE_FETCH,
+    OPERATION_MESSAGE_FORWARD,
+    OPERATION_MESSAGE_SEND,
+    SERVICE_AWS_SES,
+    EmailMessage,
+    EmailProviderError,
+    EmailProviderPort,
+    EmailProviderUnavailable,
+    InboundMessage,
+    MailboxEntry,
+)
+
+__all__ = [
+    "OPERATION_ALIAS_CREATE",
+    "OPERATION_ALIAS_LIST",
+    "OPERATION_ALIAS_REMOVE",
+    "OPERATION_FORWARDING_SET",
+    "OPERATION_IDENTITY_REMIND",
+    "OPERATION_IDENTITY_VERIFY_REQUEST",
+    "OPERATION_MAILBOX_LIST",
+    "OPERATION_MESSAGE_FETCH",
+    "OPERATION_MESSAGE_FORWARD",
+    "OPERATION_MESSAGE_SEND",
+    "SERVICE_AWS_SES",
+    "EmailMessage",
+    "EmailProviderError",
+    "EmailProviderPort",
+    "EmailProviderUnavailable",
+    "InboundMessage",
+    "MailboxEntry",
+]

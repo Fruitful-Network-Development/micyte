@@ -40,9 +40,11 @@ from .ops import (
 from .refs import (
     DefinedNode,
     Edge,
+    InboundReference,
     ReferenceIndex,
     build_reference_index,
     defined_node_addrs,
+    inbound_references,
     is_node_addr_reference,
     is_reference_marker,
 )
@@ -58,9 +60,11 @@ __all__ = [
     "ReorderRow",
     "Edge",
     "DefinedNode",
+    "InboundReference",
     "ReferenceIndex",
     "build_reference_index",
     "defined_node_addrs",
+    "inbound_references",
     "is_reference_marker",
     "is_node_addr_reference",
     "MintNode",

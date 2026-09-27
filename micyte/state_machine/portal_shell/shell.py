@@ -107,16 +107,17 @@ class PortalScope:
 
 @dataclass(frozen=True)
 class PortalShellChrome:
-    control_panel_collapsed: bool = False
+    """Shell chrome the operator can collapse — currently nothing.
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.control_panel_collapsed, bool):
-            raise ValueError("shell_chrome.control_panel_collapsed must be a bool")
+    Its one field was ``control_panel_collapsed``, and the control panel was
+    retired on 2026-08-16. The struct stays because ``chrome`` is part of the
+    persisted shell-state shape and travels through every reducer; a stored
+    ``control_panel_collapsed`` from an older session is read and ignored rather
+    than rejected, so an old bookmark still loads.
+    """
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "control_panel_collapsed": self.control_panel_collapsed,
-        }
+        return {}
 
     @classmethod
     def from_value(cls, payload: dict[str, Any] | None) -> PortalShellChrome:
@@ -124,9 +125,7 @@ class PortalShellChrome:
             return cls()
         if not isinstance(payload, dict):
             raise ValueError("shell_chrome must be a dict or null")
-        return cls(
-            control_panel_collapsed=payload.get("control_panel_collapsed") is True,
-        )
+        return cls()
 
 
 @dataclass(frozen=True)
@@ -475,11 +474,11 @@ class PortalToolRegistryEntry:
     surface_id: str
     entrypoint_id: str
     route: str
-    tool_kind: str
-    surface_posture: str
     read_write_posture: str
     required_capabilities: tuple[str, ...] = ()
-    default_enabled: bool = True
+    # Read by default_workbench_visible_for_surface below — a tool SURFACE that opens
+    # with its workbench already showing says so here. Unlike the fields removed at the
+    # bottom of this class, this one is reached.
     default_workbench_visible: bool = False
     summary: str = ""
     applies_to_archetype: tuple[str, ...] = ()
@@ -490,43 +489,45 @@ class PortalToolRegistryEntry:
     # so the token matches). The palette unions tools whose value intersects the
     # selected datum's compiled hyphae value(s).
     applies_to_hyphae_value: tuple[str, ...] = ()
-    is_extension: bool = False
-    # Phase 11 (datum_catalog_phase_e4_migration.md): tools that mutate the
-    # MOS datum store declare which AuthoritativeDatumDocument.source_kind
-    # they may write. The palette eligibility predicate does not consume
-    # this field yet — it's reserved for future tool→datum applicability
-    # checks and locked in here so the contract is in place when datum
-    # work begins.
-    manipulates_datum_kinds: tuple[str, ...] = ()
     schema: str = field(default=PORTAL_TOOL_REGISTRY_ENTRY_SCHEMA, init=False)
+
+    # Five fields were removed here in the Phase 3 tool-taxonomy work. Recording why,
+    # because a gap in a dataclass reads as an oversight and these were deliberate.
+    #
+    # ``manipulates_datum_kinds`` declared which document kinds a tool might write. It
+    # was normalized, serialized and consumed by nothing for its whole life, while the
+    # write routes took their target sandbox straight from the request body. Its job
+    # now belongs to micyte/ports/datum_write_policy, which does it for real, and to
+    # micyte.automation, where a routine's declared writes ARE the authorization
+    # request. A second statement of the same fact is the thing that drifts.
+    #
+    # ``is_extension`` marked entries hosted on a Utilities extension surface. The
+    # operator extension tools were dissolved in the portal-tool-overlay restructure;
+    # no entry has set it since, so every branch reading it was a branch that could not
+    # be taken. The extension SURFACES still exist and still route — only the flag that
+    # no entry raised is gone.
+    #
+    # ``surface_posture`` had exactly one permitted value, enforced right here, so it
+    # carried no information: every entry repeated a constant. Its only reader,
+    # ``surface_posture_for_surface``, was called once in
+    # ``build_shell_composition_payload`` as a bare expression whose result was
+    # discarded — the interface-panel posture it distinguished was retired long ago.
+    #
+    # ``tool_kind`` was validated against three constants and branched on by nothing.
+    # Every entry was TOOL_KIND_GENERAL. A taxonomy field on a two-entry registry that
+    # no code path consults is a category nobody draws.
+    #
+    # ``default_enabled`` was a per-entry override of "does this tool ship on". Its last
+    # reader went away when the three call sites that each re-derived that default
+    # collapsed onto runtime_platform.tool_exposure_enabled, where the rule is now
+    # stated once. Panels and routines have no such field, and a surface-only override
+    # would put the divergence straight back.
 
     def __post_init__(self) -> None:
         if not _as_text(self.tool_id):
             raise ValueError("tool_registry.tool_id is required")
-        if self.is_extension:
-            # Phase 14b: extensions now live across two Utilities surfaces:
-            # ``utilities.extensions`` (operational: Email, Analytics,
-            # Newsletter, PayPal) and ``utilities.grantee_profile`` (the
-            # ext_grantee_profile form). The legacy ``utilities.tool_exposure``
-            # surface_id remains accepted so external bookmarks resolve until
-            # 14e drops it entirely.
-            if self.surface_id not in {
-                UTILITIES_EXTENSIONS_SURFACE_ID,
-                UTILITIES_GRANTEE_PROFILE_SURFACE_ID,
-                UTILITIES_TOOL_EXPOSURE_SURFACE_ID,
-            }:
-                raise ValueError(
-                    "tool_registry.surface_id must be a Utilities extension surface "
-                    "(utilities.extensions, utilities.grantee_profile, or the legacy "
-                    "utilities.tool_exposure) when is_extension=True"
-                )
-        else:
-            if self.surface_id not in TOOL_SURFACE_IDS:
-                raise ValueError("tool_registry.surface_id must be a known tool surface")
-        if self.tool_kind not in {TOOL_KIND_GENERAL, TOOL_KIND_SERVICE, TOOL_KIND_HOST_ALIAS}:
-            raise ValueError("tool_registry.tool_kind is invalid")
-        if self.surface_posture != SURFACE_POSTURE_PALETTE_TARGET:
-            raise ValueError("tool_registry.surface_posture must be SURFACE_POSTURE_PALETTE_TARGET")
+        if self.surface_id not in TOOL_SURFACE_IDS:
+            raise ValueError("tool_registry.surface_id must be a known tool surface")
         if self.read_write_posture not in {"read-only", "write"}:
             raise ValueError("tool_registry.read_write_posture must be read-only or write")
         object.__setattr__(
@@ -552,12 +553,6 @@ class PortalToolRegistryEntry:
             "applies_to_hyphae_value",
             tuple(dict.fromkeys(v for v in (_as_text(t) for t in self.applies_to_hyphae_value) if v)),
         )
-        object.__setattr__(self, "is_extension", bool(self.is_extension))
-        object.__setattr__(
-            self,
-            "manipulates_datum_kinds",
-            _normalize_capabilities(self.manipulates_datum_kinds, field_name="tool_registry.manipulates_datum_kinds"),
-        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -567,17 +562,12 @@ class PortalToolRegistryEntry:
             "surface_id": self.surface_id,
             "entrypoint_id": self.entrypoint_id,
             "route": self.route,
-            "tool_kind": self.tool_kind,
-            "surface_posture": self.surface_posture,
             "read_write_posture": self.read_write_posture,
             "required_capabilities": list(self.required_capabilities),
-            "default_enabled": bool(self.default_enabled),
             "default_workbench_visible": self.default_workbench_visible,
             "summary": self.summary,
             "applies_to_archetype": list(self.applies_to_archetype),
             "applies_to_source_kind": list(self.applies_to_source_kind),
-            "is_extension": self.is_extension,
-            "manipulates_datum_kinds": list(self.manipulates_datum_kinds),
         }
 
 
@@ -604,9 +594,13 @@ def build_portal_tool_registry_entries() -> tuple[PortalToolRegistryEntry, ...]:
     return _shell_registry.build_portal_tool_registry_entries()
 
 
-def resolve_portal_surface(surface_id: object) -> PortalSurfaceCatalogEntry | None:
+def resolve_portal_surface(
+    surface_id: object, *, network_enabled: bool = True
+) -> PortalSurfaceCatalogEntry | None:
+    """See ``shell_registry.resolve_portal_surface`` — ``network_enabled`` must be
+    threaded by any caller resolving a request, or the flag is rebuilt away."""
     normalized_surface_id = _as_text(surface_id)
-    for entry in build_portal_surface_catalog():
+    for entry in build_portal_surface_catalog(network_enabled=network_enabled):
         if entry.surface_id == normalized_surface_id:
             return entry
     return None
@@ -643,7 +637,7 @@ def requires_shell_state_machine(surface_id: object) -> bool:
 
 _TOOL_SURFACE_TO_SANDBOX_ID: dict[str, str] = {
     WORKBENCH_UI_TOOL_SURFACE_ID: "workbench_ui",
-    TRAPP_FAMILY_FARM_TOOL_SURFACE_ID: "example_farm",
+    AGRO_ERP_TOOL_SURFACE_ID: "agro_erp",
 }
 
 
@@ -808,7 +802,7 @@ def initial_portal_shell_state(
         focus_subject=_subject_from_segment(focus_path[-1]),
         mediation_subject=None,
         verb=VERB_NAVIGATE,
-        chrome=PortalShellChrome(control_panel_collapsed=False),
+        chrome=PortalShellChrome(),
     )
     return canonicalize_portal_shell_state(
         base_state,
@@ -1100,20 +1094,141 @@ def _sandbox_filter_from_document_id(document_id: str) -> str:
     return sandbox if sandbox and sandbox != "system" else ""
 
 
+def _msn_filter_from_document_id(document_id: str) -> str:
+    """Infer the OWNING INSTANCE from a canonical ``lv.`` document id.
+
+    No ``system`` exclusion, unlike the sandbox above. That exclusion means "scoping to
+    system shows the whole corpus", which is a statement about a VIEW; an msn is a
+    statement about ownership and is meaningful for every document, most of all for one
+    in a sandbox named `system` — that is precisely the case a name cannot resolve.
+    """
+    try:
+        parsed = parse_canonical_document_id(document_id)
+    except CanonicalNameError:
+        return ""
+    return _as_text(parsed.msn_id)
+
+
 def canonical_query_for_surface_query(
     surface_query: Mapping[str, Any] | None,
     *,
     surface_id: str,
 ) -> dict[str, str]:
+    """The canonical URL query for a surface — WHICH INSTANCE always included.
+
+    `msn_filter` is added here, once, for every surface rather than inside each branch.
+    It is not a surface's own state: it is WHOSE portal this is, and it is the answer to
+    that question on every page in the shell. Enumerating the surfaces that keep it is how
+    a surface added later quietly loses it, and this vocabulary has already paid that
+    twice — once for `narrow`, once for every record table's filters.
+
+    The cost was live. `utilities.*` fell through to the bare `return {}` at the bottom
+    and `network.browser` / `network.inbox` / `network.profile` each returned only their
+    own selections, so ARRIVING at any of them rewrote the address bar without the
+    instance. Switch to a client, open Utilities, and the reload — or the bookmark, or the
+    link you handed somebody — was the operator's own instance again.
+    """
     if surface_id == NETWORK_ROOT_SURFACE_ID:
         if surface_query is not None and not isinstance(surface_query, Mapping):
             raise ValueError("portal_shell_request.surface_query must be a mapping or null")
+        # The map's own normalizer already keeps `msn_filter`; it is listed in
+        # NETWORK_ROOT_SUPPORTED_QUERY_KEYS, so this early return needs nothing here.
         query, _ = normalize_network_surface_query(surface_query)
         return query
     normalized = _normalize_surface_query(
         surface_query,
         field_name="portal_shell_request.surface_query",
     )
+    query = _surface_selection_query(normalized, surface_id=surface_id)
+    # `setdefault`, so a branch that resolves the instance some OTHER way keeps its
+    # answer — `workbench.tool` derives it from the open document's id when the request
+    # did not name one, and that derivation is better than the request.
+    instance = _as_text(normalized.get("msn_filter")) or _as_text(normalized.get("msn_id"))
+    if instance:
+        query.setdefault("msn_filter", instance)
+    return query
+
+
+def _surface_selection_query(
+    normalized: Mapping[str, Any],
+    *,
+    surface_id: str,
+) -> dict[str, str]:
+    """Everything in a surface's canonical query EXCEPT which instance it is on.
+
+    Split out of :func:`canonical_query_for_surface_query` so the instance can be added
+    to every surface in one place. A branch here may still name `msn_filter` itself when
+    it has a better answer than the request's.
+    """
+    if surface_id == NETWORK_BROWSER_SURFACE_ID:
+        # The msn browser's three keys. `mode` is a REQUEST, not a setting: the
+        # engine may refuse `linked` and return the reason, so an unknown value
+        # is dropped here rather than being passed through to be misread as an
+        # instruction the domain could not honour.
+        browser_query: dict[str, str] = {}
+        requested_mode = _as_text(normalized.get("mode")).lower()
+        if requested_mode in {"cached", "linked"}:
+            browser_query["mode"] = requested_mode
+        # Region and node are free-form addresses (a gazetteer node, an msn_id).
+        # They are validated against the registry that was actually loaded, not
+        # against a pattern here: a syntactically valid msn that is not in this
+        # registry must produce "no such node", not a blank pane.
+        region_id = _as_text(normalized.get("region"))
+        if region_id:
+            browser_query["region"] = region_id
+        node_id = _as_text(normalized.get("node"))
+        if node_id:
+            browser_query["node"] = node_id
+        return browser_query
+    if surface_id == NETWORK_INBOX_SURFACE_ID:
+        # WHICH contract's history is open, and whether the archived ones are showing.
+        # Both are selections, and a selection this portal cannot put in a URL is one an
+        # operator cannot hand to anybody.
+        inbox_query: dict[str, str] = {}
+        contract_id = _as_text(normalized.get("contract"))
+        if contract_id:
+            inbox_query["contract"] = contract_id
+        # The event-TYPE filter, inherited from the System Log tab along with its rows.
+        event_type = _as_text(normalized.get("type"))
+        if event_type:
+            inbox_query["type"] = event_type
+        if _as_text(normalized.get("archived")).lower() in {"1", "true", "show"}:
+            inbox_query["archived"] = "show"
+        return inbox_query
+    if surface_id == NETWORK_PROFILE_SURFACE_ID:
+        # This instance's own card. It carries no selection of its own — WHICH instance
+        # is the shell's question, answered by `msn_filter` like everywhere else.
+        return {}
+    if surface_id == GADGETS_ROOT_SURFACE_ID:
+        # The launcher page. Its one dimension of state is WHICH instance's shelf is
+        # showing — the entries themselves are addresses elsewhere (a tool query on
+        # the Compendium root), so nothing else belongs in this URL.
+        gadgets_query: dict[str, str] = {}
+        gadgets_msn = _as_text(normalized.get("msn_filter")) or _as_text(normalized.get("msn_id"))
+        if gadgets_msn:
+            gadgets_query["msn_filter"] = gadgets_msn
+        return gadgets_query
+    if surface_id == PROFILE_ROOT_SURFACE_ID:
+        # The identity surface. `msn_filter` names WHOSE profile; `channel` is the
+        # in-page channel session a card opened — listed here or a reload backs out
+        # of the channel in silence.
+        profile_query: dict[str, str] = {}
+        profile_msn = _as_text(normalized.get("msn_filter")) or _as_text(normalized.get("msn_id"))
+        if profile_msn:
+            profile_query["msn_filter"] = profile_msn
+        profile_channel = _as_text(normalized.get("channel"))
+        if profile_channel:
+            profile_query["channel"] = profile_channel
+            # The open channel's OWN state rides the same address: the grantor
+            # session's tab and its admin drill-in ("which alias am I looking at").
+            # Listed here or a reload silently backs out of both.
+            grantor_tab = _as_text(normalized.get("grantor_tab"))
+            if grantor_tab:
+                profile_query["grantor_tab"] = grantor_tab
+            grantee = _as_text(normalized.get("grantee"))
+            if grantee:
+                profile_query["grantee"] = grantee
+        return profile_query
     # system.root hosts the unified workbench, so it shares the workbench
     # query vocabulary. Phase A (function-forward refactor) is collapsing the
     # dual state model so system.root becomes query-native like the workbench;
@@ -1175,7 +1290,7 @@ def canonical_query_for_surface_query(
         # Accept ``sandbox`` as an alias for ``sandbox_filter`` (legacy
         # redirects / bookmarks emitted ``?sandbox=``), and when no sandbox is
         # supplied, infer it from a canonical ``lv.<msn>.<sandbox>.<name>.<hash>``
-        # document id so opening an Example Farm (or other tool-sandbox) document
+        # document id so opening an agro_erp (or other tool-sandbox) document
         # resolves into its sandbox instead of dropping back to the whole-corpus
         # system view.
         sandbox_filter = _as_text(normalized.get("sandbox_filter")) or _as_text(normalized.get("sandbox"))
@@ -1183,6 +1298,19 @@ def canonical_query_for_surface_query(
             sandbox_filter = _sandbox_filter_from_document_id(document_id)
         if sandbox_filter:
             query["sandbox_filter"] = sandbox_filter
+        # WHOSE sandbox. A sandbox NAME identifies an instance only while no two instances
+        # share one, and every instance now keeps its own core sandbox called `system`.
+        # Inferred from a canonical document id for the same reason `sandbox_filter` is:
+        # opening a document should resolve into ITS instance, not the one in focus.
+        #
+        # It has to be listed here or it is dropped in silence — a canonical query keeps
+        # only the keys it names, which is how the marketplace ledger came to evaluate
+        # every package against an empty sandbox.
+        msn_filter = _as_text(normalized.get("msn_filter")) or _as_text(normalized.get("msn_id"))
+        if not msn_filter and document_id:
+            msn_filter = _msn_filter_from_document_id(document_id)
+        if msn_filter:
+            query["msn_filter"] = msn_filter
         # Multi-tool visualization panel: `tools` is a comma-joined tool-id list.
         # Accept the legacy scalar `tool` and fold it in for back-compat.
         tools = _as_text(normalized.get("tools")) or _as_text(normalized.get("tool"))
@@ -1194,6 +1322,79 @@ def canonical_query_for_surface_query(
         samras_structure = _as_text(normalized.get("samras_structure"))
         if samras_structure:
             query["samras_structure"] = samras_structure
+        # Compendium folder-UI state (2026-08-16): `view` picks the sandbox's face;
+        # `doc_view` picks the open document's face — `scope` (its archetype's view) or
+        # `raw` (the datum grid). The legacy raw-grid spelling (mode=datums) is folded
+        # into doc_view so an old bookmark lands on the same face it named.
+        #
+        # `gallery` was retired 2026-08-20: a sandbox IS its local domain log, so the
+        # faces are `domain` (the node graph) and `list` (the log as a table). An old
+        # `?view=gallery` bookmark drops the key and lands on the default, which is the
+        # domain — the surface that replaced what it named.
+        view_mode = _as_text(normalized.get("view")).lower()
+        if view_mode in {"domain", "list"}:
+            query["view"] = view_mode
+        # An INSTRUMENT is a peer of a sandbox on the shelf — a lens over one datum kind
+        # across every sandbox of the instance. It has to be listed here or it is dropped
+        # in silence, and the level would fall back to the shelf it was opened from.
+        instrument_id = _as_text(normalized.get("instrument"))
+        if instrument_id:
+            query["instrument"] = instrument_id
+        # The Compendium's own panels, opened by address so a reload lands back on them.
+        # `sources` is the INSTANCE's source page (distinct from `source`, which is the
+        # raw grid's show/hide of the source column); `settings` is a sandbox's own
+        # settings, whose Ports tab replaced the per-sandbox half of Utilities.
+        panel = _as_text(normalized.get("sources")).lower()
+        if panel == "instance":
+            query["sources"] = panel
+        settings = _as_text(normalized.get("settings")).lower()
+        if settings in {"ports", "sources"}:
+            query["settings"] = settings
+        # The domain surface's SELECTION. The URL is the state: a reload of a selected
+        # node must come back on that node, and a canonical query keeps only the keys it
+        # names — so leaving this out drops the selection on every navigation.
+        lcl_node = _as_text(normalized.get("lcl_node"))
+        if lcl_node:
+            query["lcl_node"] = lcl_node
+        doc_view = _as_text(normalized.get("doc_view")).lower()
+        if doc_view not in {"scope", "raw"}:
+            doc_view = ""
+        if not doc_view and query.get("mode") == "datums":
+            doc_view = "raw"
+        if doc_view:
+            query["doc_view"] = doc_view
+        # Hub tab + viewscope cursor state. These were overlay-local params — held in
+        # client memory, gone on reload — until the tool overlay was retired
+        # (2026-08-16): a tool now renders IN the workbench, so the state that picks
+        # its tab or its tree position is part of the canonical URL like everything
+        # else this vocabulary names. Free-form values; each hub validates its own
+        # tab id and falls back to its default tab.
+        for hub_tab_key in ("erp_tab", "brevat_tab", "oveure_tab", "grantor_tab"):
+            hub_tab = _as_text(normalized.get(hub_tab_key))
+            if hub_tab:
+                query[hub_tab_key] = hub_tab
+        # The grantor session's admin drill-in ("which alias am I looking at"),
+        # when the channel is opened through the tool host rather than the
+        # profile page. Listed here or a reload silently backs out of it.
+        grantor_grantee = _as_text(normalized.get("grantee"))
+        if grantor_grantee:
+            query["grantee"] = grantor_grantee
+        viewscope_root = _as_text(normalized.get("viewscope_root"))
+        if viewscope_root:
+            query["viewscope_root"] = viewscope_root
+        # A RECORD TABLE'S OWN SEARCH AND FACETS.                        (2026-08-18)
+        # Kept by SHAPE — `<prefix>_q`, `<prefix>_f_<column>` — rather than by name,
+        # because the alternative is enumerating every table's prefix times every column
+        # it facets, and the enumeration drifts the first time a facet is added.
+        #
+        # Measured before this: none of them survived. The jobs table's trade and month
+        # dropdowns, the contacts table's, the ledgers' search boxes — every one of them
+        # posted a param the canonical query threw away, so the table came back unfiltered
+        # and looked as though the filter had matched everything. `narrow` was correct
+        # throughout; nothing ever reached it.
+        for key, value in normalized.items():
+            if is_record_table_filter_key(key) and _as_text(value):
+                query[key] = _as_text(value)
         return query
     return {}
 
@@ -1385,10 +1586,27 @@ def build_nimm_envelope_for_shell_state(
     )
 
 
-def resolve_portal_shell_request(request: PortalShellRequest | dict[str, Any] | None) -> PortalShellResolution:
+def resolve_portal_shell_request(
+    request: PortalShellRequest | dict[str, Any] | None,
+    *,
+    network_enabled: bool = True,
+) -> PortalShellResolution:
+    """Resolve a shell request against THIS instance's surface catalog.
+
+    ``network_enabled`` is the instance's own flag and has to arrive here. Without
+    it this resolved every request against a catalog built with the network module
+    on, so an instance that disabled it still answered ``allowed=True,
+    selection_status="available"`` for ``network.root`` and ``network.p2p`` — the
+    opposite of what the catalog builder says, and true of the API even though the
+    activity rail never drew the entry. A hand-written 404 in the FND host was the
+    only thing standing in front of it, which makes the flag a property of one
+    deployment's routing table rather than of the shell.
+    """
     normalized_request = request if isinstance(request, PortalShellRequest) else PortalShellRequest.from_dict(request)
     requested_surface_id = normalized_request.requested_surface_id
-    surface_entry = resolve_portal_surface(requested_surface_id)
+    surface_entry = resolve_portal_surface(
+        requested_surface_id, network_enabled=network_enabled
+    )
     if surface_entry is None or not surface_entry.launchable:
         # Unknown surfaces fall back to system.root. Since Phase A made
         # system.root query-native, the fallback resolves the same way: no
@@ -1450,12 +1668,16 @@ def activity_icon_id_for_surface(surface_id: object) -> str:
         return "system"
     if normalized_surface_id == NETWORK_ROOT_SURFACE_ID:
         return "network"
+    if normalized_surface_id == GADGETS_ROOT_SURFACE_ID:
+        return "gallery"
+    if normalized_surface_id == PROFILE_ROOT_SURFACE_ID:
+        return "profile_interface"
     if normalized_surface_id in {UTILITIES_ROOT_SURFACE_ID, UTILITIES_TOOL_EXPOSURE_SURFACE_ID}:
         return "utilities"
     if normalized_surface_id == WORKBENCH_UI_TOOL_SURFACE_ID:
         return "workbench_ui"
-    if normalized_surface_id == TRAPP_FAMILY_FARM_TOOL_SURFACE_ID:
-        return "example_farm"
+    if normalized_surface_id == AGRO_ERP_TOOL_SURFACE_ID:
+        return "agro_erp"
     return "generic"
 
 
@@ -1465,6 +1687,10 @@ def map_surface_to_active_service(active_surface_id: str) -> str:
         return "network"
     if root_id == UTILITIES_ROOT_SURFACE_ID:
         return "utilities"
+    if root_id == GADGETS_ROOT_SURFACE_ID:
+        return "gadgets"
+    if root_id == PROFILE_ROOT_SURFACE_ID:
+        return "profile"
     return "system"
 
 
@@ -1472,14 +1698,6 @@ def shell_composition_mode_for_surface(active_surface_id: str) -> str:
     if is_tool_surface(active_surface_id):
         return "tool"
     return "system"
-
-
-def surface_posture_for_surface(active_surface_id: str) -> str:
-    if is_tool_surface(active_surface_id):
-        entry = resolve_portal_tool_registry_entry(surface_id=active_surface_id)
-        if entry is not None:
-            return entry.surface_posture
-    return SURFACE_POSTURE_INTERFACE_PANEL_PRIMARY
 
 
 def default_workbench_visible_for_surface(active_surface_id: str) -> bool:
@@ -1524,19 +1742,26 @@ def build_shell_composition_payload(
     page_title: str,
     page_subtitle: str,
     activity_items: list[dict[str, Any]],
-    control_panel: dict[str, Any],
     workbench: dict[str, Any],
     shell_state: PortalShellState | dict[str, Any] | None = None,
-    control_panel_collapsed: bool = False,
     activity_footer: dict[str, Any] | None = None,
+    icon_sprite: str = "",
 ) -> dict[str, Any]:
-    # portal-tool-overlay-restructure: the interface_panel region was removed — tools render in
-    # the menubar-search → full-screen overlay, not a sidebar region.
+    # Two regions compose the shell: the activity bar and the workbench.
+    #
+    # The interface_panel went with the tool overlay (portal-tool-overlay-restructure).
+    # The control_panel followed on 2026-08-16, by operator directive: at any viewport
+    # under 960px it became a fixed drawer pinned over the workbench with no reachable
+    # way to close it, which is why the portal could not be used from a phone at all.
+    # Everything it carried that was a real fact about a surface now travels with that
+    # surface — sources with the sandbox, section nav with the page, the log filters
+    # with the log table. What it carried that was NOT (a sandbox selector the
+    # Compendium shelf supersedes, an identity row the menubar repeats, a Directive
+    # Terminal disabled on every instance) is simply gone.
     state = shell_state if isinstance(shell_state, PortalShellState) else (
         PortalShellState.from_value(shell_state) if isinstance(shell_state, dict) else None
     )
     tool_surface = is_tool_surface(active_surface_id)
-    surface_posture_for_surface(active_surface_id)
     workbench_region = dict(workbench or {})
     workbench_region.setdefault("schema", PORTAL_SHELL_REGION_WORKBENCH_SCHEMA)
     workbench_visible = _region_visible(
@@ -1556,7 +1781,6 @@ def build_shell_composition_payload(
         "active_surface_id": _as_text(active_surface_id),
         "active_tool_surface_id": _as_text(active_surface_id) if is_tool_surface(active_surface_id) else None,
         "foreground_shell_region": foreground_region_for_surface(active_surface_id),
-        "control_panel_collapsed": bool(control_panel_collapsed),
         "workbench_collapsed": workbench_collapsed,
         "portal_instance_id": _as_text(portal_instance_id) or PORTAL_SCOPE_DEFAULT_ID,
         "page_title": _as_text(page_title) or "MiCyte",
@@ -1566,13 +1790,18 @@ def build_shell_composition_payload(
             "activity_bar": {
                 "schema": PORTAL_SHELL_REGION_ACTIVITY_BAR_SCHEMA,
                 "dispatch": "post_portal_shell",
+                # Where the rail's glyphs come from. Supplied by the SERVER rather than
+                # built in the renderer because the cache-buster is the build id, which the
+                # renderer has no access to — and /assets/icons is served `immutable` for a
+                # year, so an un-versioned href means an edited sprite never reaches anyone
+                # who has already loaded the old one.
+                "icon_sprite": _as_text(icon_sprite),
                 "items": list(activity_items),
                 # Pinned below the nav list: the instance the operator is viewing
                 # as, and the other instances they may switch to. Empty dict when
                 # the store cannot be read — the bar still renders its nav.
                 "footer": dict(activity_footer or {}),
             },
-            "control_panel": dict(control_panel or {}),
             "workbench": workbench_region,
         },
     }
@@ -1583,29 +1812,46 @@ def build_shell_composition_payload(
 
 
 __all__ = [
+    "AGRO_ERP_LEGACY_MSN_ID",
+    "AGRO_ERP_TOOL_ENTRYPOINT_ID",
+    "AGRO_ERP_TOOL_ROUTE",
+    "AGRO_ERP_TOOL_SURFACE_ID",
     "ARCHETYPE_HYPHAE_RUDI",
     "ARCHETYPE_MSS_DOC",
     "ARCHETYPE_SAMRAS_FAMILY",
+    "CORE_SANDBOX_TOKEN",
     "FOCUS_LEVEL_DATUM",
     "FOCUS_LEVEL_FILE",
     "FOCUS_LEVEL_OBJECT",
     "FOCUS_LEVEL_SANDBOX",
+    "GADGETS_ROOT_ROUTE",
+    "GADGETS_ROOT_SURFACE_ID",
+    "LEGACY_SYSTEM_ROOT_ROUTE",
+    "NETWORK_BROWSER_ROUTE",
+    "NETWORK_BROWSER_SURFACE_ID",
+    "NETWORK_INBOX_ROUTE",
+    "NETWORK_INBOX_SURFACE_ID",
+    "NETWORK_P2P_ROUTE",
+    "NETWORK_P2P_SURFACE_ID",
+    "NETWORK_PROFILE_ROUTE",
+    "NETWORK_PROFILE_SURFACE_ID",
     "NETWORK_ROOT_ROUTE",
     "NETWORK_ROOT_SURFACE_ID",
+    "NETWORK_SURFACE_IDS",
     "OPERATIONAL_FILE_KEYS",
+    "PORTAL_ICON_SPRITE",
     "PORTAL_SCOPE_DEFAULT_ID",
     "PORTAL_SHELL_ACTIVITY_FOOTER_SCHEMA",
     "PORTAL_SHELL_COMPOSITION_SCHEMA",
     "PORTAL_SHELL_ENTRYPOINT_ID",
     "PORTAL_SHELL_REGION_ACTIVITY_BAR_SCHEMA",
-    "PORTAL_SHELL_REGION_CONTROL_PANEL_SCHEMA",
     "PORTAL_SHELL_REGION_WORKBENCH_SCHEMA",
     "PORTAL_SHELL_REQUEST_SCHEMA",
     "PORTAL_SHELL_STATE_SCHEMA",
     "PORTAL_SURFACE_CATALOG_ENTRY_SCHEMA",
     "PORTAL_TOOL_REGISTRY_ENTRY_SCHEMA",
-    "SURFACE_POSTURE_INTERFACE_PANEL_PRIMARY",
-    "SURFACE_POSTURE_PALETTE_TARGET",
+    "PROFILE_ROOT_ROUTE",
+    "PROFILE_ROOT_SURFACE_ID",
     "SYSTEM_ACTIVITY_FILE_KEY",
     "SYSTEM_ANCHOR_FILE_KEY",
     "SYSTEM_PROFILE_BASICS_FILE_KEY",
@@ -1614,9 +1860,6 @@ __all__ = [
     "SYSTEM_SANDBOX_QUERY_FILE_TOKEN",
     "SYSTEM_SURFACE_IDS",
     "TOOL_ANCHOR_FILE_KEY",
-    "TOOL_KIND_GENERAL",
-    "TOOL_KIND_HOST_ALIAS",
-    "TOOL_KIND_SERVICE",
     "TOOL_SURFACE_IDS",
     "TRANSITION_BACK_OUT",
     "TRANSITION_ENTER_SURFACE",
@@ -1625,22 +1868,28 @@ __all__ = [
     "TRANSITION_FOCUS_OBJECT",
     "TRANSITION_FOCUS_SANDBOX",
     "TRANSITION_SET_VERB",
-    "TRAPP_FAMILY_FARM_SANDBOX_TOKEN",
-    "TRAPP_FAMILY_FARM_TOOL_ENTRYPOINT_ID",
-    "TRAPP_FAMILY_FARM_TOOL_ROUTE",
-    "TRAPP_FAMILY_FARM_TOOL_SURFACE_ID",
+    "UTILITIES_APPS_ROUTE",
+    "UTILITIES_APPS_SURFACE_ID",
+    "UTILITIES_CONTRACTS_ROUTE",
+    "UTILITIES_CONTRACTS_SURFACE_ID",
     "UTILITIES_EXTENSIONS_ROUTE",
     "UTILITIES_EXTENSIONS_SURFACE_ID",
     "UTILITIES_GRANTEE_PROFILE_ROUTE",
     "UTILITIES_GRANTEE_PROFILE_SURFACE_ID",
     "UTILITIES_PERIPHERALS_ROUTE",
     "UTILITIES_PERIPHERALS_SURFACE_ID",
+    "UTILITIES_PORTS_ROUTE",
+    "UTILITIES_PORTS_SURFACE_ID",
+    "UTILITIES_PUBLISHED_ROUTE",
+    "UTILITIES_PUBLISHED_SURFACE_ID",
     "UTILITIES_ROOT_ROUTE",
     "UTILITIES_ROOT_SURFACE_ID",
     "UTILITIES_TOOLS_ROUTE",
     "UTILITIES_TOOLS_SURFACE_ID",
     "UTILITIES_TOOL_EXPOSURE_ROUTE",
     "UTILITIES_TOOL_EXPOSURE_SURFACE_ID",
+    "UTILITIES_WALLET_ROUTE",
+    "UTILITIES_WALLET_SURFACE_ID",
     "VERB_INVESTIGATE",
     "VERB_MANIPULATE",
     "VERB_MEDIATE",
@@ -1694,6 +1943,5 @@ __all__ = [
     "sandbox_id_for_surface",
     "segment_id_for_level",
     "shell_composition_mode_for_surface",
-    "surface_posture_for_surface",
     "surface_root_id",
 ]

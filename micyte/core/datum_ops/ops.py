@@ -49,12 +49,12 @@ class Workbook:
     defined. Empty means "this sandbox must be self-contained".
 
     It exists because cross-sandbox references are designed, not accidental: the
-    heirloom ingest keys trapp's ``product_profiles`` rows to taxon nodes it looks
-    up in the ``taxonomy`` sandbox ("Only example_farm docs are written;
+    heirloom ingest keys a farm's ``product_profiles`` rows to taxon nodes it looks
+    up in the ``taxonomy`` sandbox ("Only one farm's docs are written;
     taxonomy is Phase I"), and ``deployed/tff/build.json`` names ``txa`` as a
     cross-portal reference. Without this the rule check sees only the one sandbox
     it loaded, reports every such reference as dangling, and blocks every
-    workbook apply on trapp.
+    workbook apply on that farm.
 
     The set is supplied by whoever loads the workbook, so the policy for "which
     documents may I reference" stays at the composition root (see

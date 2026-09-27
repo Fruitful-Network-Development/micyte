@@ -11,7 +11,7 @@ This is the concrete proof of the "tools = a library of UI objects that view the
 visualized target datum" convention: it composes a panel payload purely from the
 sandbox's own documents, including the **cross-document** product_id→name lookup
 that the document-local recognition layer does not perform. The resolver
-(:class:`LclNameIndex`) is memoized per (document_id) so the 1.6k-entry binary
+(:class:`~micyte.core.datum_ops.datum_resolve.NameIndex`) is memoized per (document_id) so the 1.6k-entry binary
 decode is not repeated per render.
 """
 
@@ -29,13 +29,9 @@ from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
-from ._archetype import read_sandbox_catalog, resolve_tool_sandbox
-from ._registry import register
+from ._archetype import document_sandbox, find_local_domain, read_sandbox_catalog
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
-
-# Back-compat alias: the cross-tool resolver now lives in datum_ops.datum_resolve
-# (shape-based scan + shared cache). txa_tree / contracts import this name from here.
-LclNameIndex = NameIndex
 
 _TENANT_DEFAULT = "fnd"
 _SCHEMA = "mycite.v2.portal.workbench.tool.product_document.v1"
@@ -65,6 +61,19 @@ _UNIT_FIELDS = {"gestation", "spacing"}
 _NOMINAL_FIELDS = {"singular_unit_weight", "propagule_density"}
 _SECONDS_PER_DAY = 86400
 _SECOND_UNIT_REF = "2-1-1"  # `second` unit abstraction (gestation + shelf_life magnitudes)
+#: The shortest head this positional reader can honestly parse: the template's NINE pairs
+#: plus the row's own address. A `product_profiles` document may hold `offering_record`
+#: rows too — that is what FND's `agnet.product_profiles` is, all 217 of them, and since
+#: 2026-09-02 it is what `ledger_write_runtime.add_product` appends for a client. Those
+#: rows carry four pairs and agree with this shape on the first two (`rf.3-1-5` product,
+#: `rf.3-1-1` taxon) and diverge on the third, so read positionally an `offering_record`'s
+#: title babelette lands under `rotation_group` and its `hyphae_ref` under `propagule` —
+#: the "two subtly different row shapes in one document" failure `record_spec` names.
+#: A reader of a fixed positional format cannot parse a head too short to carry it, so it
+#: skips one rather than labelling its cells with the wrong field names. The catalog reads
+#: the same document by SHAPE (`ledger_books.product_rows`), which is the question that
+#: actually separates them.
+_MIN_AGRO_ERP_HEAD = 2 * 9 + 1
 
 
 def _shelf_nominal_to_seconds(magnitude: str) -> int:
@@ -111,6 +120,9 @@ class ProductDocumentViewer:
     label = "Product Document Viewer"
     summary = "Products with names, taxonomy, classification and unit magnitudes resolved from the sandbox."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ("agro_erp_product_profile_row",)
     # Intentionally NOT source-kind-matched: the product viewer is specific to the
     # product_profile archetype, not to every sandbox_source document. (The match
@@ -126,19 +138,36 @@ class ProductDocumentViewer:
         document_id: str,
         datum_address: str,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=_as_text(sandbox_id))
         if err:
             return _error(err)
-        product_doc = next((d for d in docs if _as_text(getattr(d, "document_id", "")) == _as_text(document_id)), None)
+        # The sandbox is resolved BEFORE the document, and an absent one fails closed.
+        # This used to scan the whole catalog for a matching document_id and only then
+        # ask which sandbox to render against — so a document_id from another farm was
+        # answered with that farm's rows, and the lcl/txa indexes below were built from
+        # whichever sandbox the caller's token named. That is the cross-instance leak
+        # DatumDocTool spells out (micyte/tools/_contract.py): "No sandbox -> fail
+        # closed." The id belongs to the caller; the sandbox is the boundary, so the
+        # boundary is checked first and the id is only honoured inside it.
+        sandbox = _as_text(sandbox_id)
+        if not sandbox:
+            return _error("no sandbox specified")
+        product_doc = next(
+            (
+                d
+                for d in docs
+                if _as_text(getattr(d, "document_id", "")) == _as_text(document_id)
+                and document_sandbox(d) == sandbox
+            ),
+            None,
+        )
         if product_doc is None:
-            # fall back to the named product_profiles doc in the sandbox
-            named_in = resolve_tool_sandbox(sandbox_id, docs=docs)
-            product_doc = _find_named(docs, named_in, "product_profiles") if named_in else None
+            # fall back to the named product_profiles doc in the SAME sandbox
+            product_doc = _find_named(docs, sandbox, "product_profiles")
         if product_doc is None:
             return _error("product_profiles document not found")
 
-        sandbox = resolve_tool_sandbox(sandbox_id, doc=product_doc, docs=docs)
-        lcl_index = cached_index(_find_named(docs, sandbox, "lcl"))
+        lcl_index = cached_index(find_local_domain(docs, sandbox=sandbox))
         txa_index = cached_index(_find_named(docs, sandbox, "txa"))
 
         products = build_product_rows(product_doc, lcl_index=lcl_index, txa_index=txa_index)
@@ -158,8 +187,8 @@ class ProductDocumentViewer:
 def build_product_rows(
     product_doc: AuthoritativeDatumDocument,
     *,
-    lcl_index: LclNameIndex,
-    txa_index: LclNameIndex,
+    lcl_index: NameIndex,
+    txa_index: NameIndex,
 ) -> list[dict[str, Any]]:
     """Resolve every ``4-9-*`` vg-9 row into a labelled product dict (pure)."""
     all_rows = _rows(product_doc)
@@ -173,6 +202,8 @@ def build_product_rows(
         if not (isinstance(raw, list) and raw and isinstance(raw[0], list)):
             continue
         head = raw[0]
+        if len(head) < _MIN_AGRO_ERP_HEAD:
+            continue
         product_name = ""
         if len(raw) > 1 and isinstance(raw[1], list) and raw[1]:
             product_name = _as_text(raw[1][0])
@@ -220,15 +251,11 @@ def _find_named(docs: list[Any], sandbox_id: str, name: str) -> AuthoritativeDat
     return None
 
 
-def _sandbox_of(document: AuthoritativeDatumDocument) -> str:
-    # Canonical id is lv.<msn>.<sandbox>.<name>.<hash> → sandbox is parts[2].
-    parts = _as_text(getattr(document, "document_id", "")).split(".")
-    return parts[2] if len(parts) > 4 else ""
-
-
 def _error(message: str) -> dict[str, Any]:
     return {"schema": _SCHEMA, "error": message, "products": [], "product_count": 0}
 
 
-# Self-register on import.
-register(ProductDocumentViewer())
+# register(ProductDocumentViewer())  # retired TASK-2026-08-14-002 Phase 1: renders a
+# document's own values, which is a viewscope's job. The module survives as a library —
+# build_product_rows feeds record_synopsis, _consumption and taxa_product_table, and
+# local_domain_viewer's product table constructs the class directly.

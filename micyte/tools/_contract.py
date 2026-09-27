@@ -8,6 +8,53 @@ search and invoked via ``surface_query.tool``.
 
 The contract is intentionally minimal: a few identifying attributes and
 one method. Tools self-register in :mod:`_registry` on import.
+
+**Launch posture.** ``applies_to_archetype`` / ``applies_to_source_kind`` answer "may
+this tool be offered for the document in FOCUS". A tool that is about the INSTANCE
+instead (a hub, an instrument's reader) is launched by address — the Gadgets gallery
+and the menubar search open it as ``?tool=<id>`` on the Compendium root with the
+instance switcher's sandbox — so it needs no flag: the ``core = True`` /
+``core_sandbox`` pair that used to mark rail launchers left with the launcher rail
+(2026-08-21).
+
+**Optional attributes, read with ``getattr`` defaults, deliberately not Protocol
+members** — this Protocol is ``runtime_checkable`` and :func:`_registry.register`
+isinstance-checks it: CPython's protocol instance check tests every declared member
+with ``hasattr``, so adding a data attribute here would un-register every tool that
+does not carry one.
+
+* ``writes`` — the declared writes, already read by :func:`_registry.declared_writes`.
+* ``icon`` — the sprite symbol the rail draws. Absent means the generic one.
+* ``requires`` — a :class:`micyte.ports.tool_package.ToolRequirement`: the source manifests
+  this tool reads from other sandboxes, and the blank documents it needs to exist. This is
+  the operator's "tools dictate their required source reference files and the blank datum
+  docs to be created for their use", and both halves are mechanisms that already exist —
+  ``micyte.core.sources`` for the first, ``create_document_rows`` for the second. What was
+  missing was the tool SAYING so, so an install can provision them rather than an operator
+  running two scripts in the right order.
+
+  A requirement is NOT a permission. It says what must exist for the tool to work, never
+  what the tool may do — that stays with ``writes`` and, at the point it matters,
+  ``datum_write_policy``, which denies on an empty grant set.
+
+* ``wants_surface_query`` — the tool is handed the request's query args as ``extra_query``
+  (a chosen structure, an active tab, a filter).
+
+* ``wants_host_context`` — the tool is handed ``host_context``: the facts only the HOST
+  holds. ``micyte`` has no filesystem write, no network client and no knowledge of this
+  deployment's layout, so a tool that needs the instance's ``private_dir`` or a live PORT
+  must be given them rather than reaching for them.
+
+  Declared rather than always-passed for the reason ``extra_query`` is: a keyword every
+  tool must accept is a keyword most tools ignore, and one that silently defaults to
+  nothing is worse than absent. ``pim_overview`` is the worked example — it took
+  ``private_dir`` as a plain keyword that no call site ever supplied, so it reported the
+  mail seam as unbound on an instance where it was bound and permitted.
+
+  Two keys today: ``private_dir`` (this instance's own configuration directory) and
+  ``port`` — a callable taking a ``port_id`` and returning a live adapter, or ``None``
+  when nothing is bound. A tool talks to whatever comes back through the port's Protocol
+  and nothing else, so a different filling needs no edit in the tool.
 """
 
 from __future__ import annotations
@@ -121,9 +168,6 @@ class DatumDocTool:
         from ._archetype import read_sandbox_catalog, resolve_tool_document
         from ._shared.utilities import as_text
 
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=self.tenant_id)
-        if err:
-            return self._error(err)
         # Resolve against the ACTIVE sandbox. A viewer is only addable where its datum docs
         # exist (archetype-scoped search), so this receives the right sandbox; invoked under
         # any other sandbox it resolves to nothing ("not found"), which is correct.
@@ -133,6 +177,11 @@ class DatumDocTool:
         sandbox = sandbox_id or self.default_sandbox
         if not sandbox:
             return self._error("no sandbox specified")
+        # ONE sandbox is read: the document is resolved in it and `shape_payload` looks up
+        # its local domain, taxonomy and anchor in it. This read the whole tenant.
+        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=self.tenant_id, sandbox=sandbox)
+        if err:
+            return self._error(err)
         doc = resolve_tool_document(
             docs, tool=self, sandbox=sandbox, document_id=document_id, canonical_name=self.canonical_name
         )

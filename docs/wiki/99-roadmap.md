@@ -33,9 +33,10 @@ authoring. Read it this way:
 - **Track 2 — MSS / YAML model coherence.** Reconcile the identity model and
   unify read + write on one WORKBOOK-YAML representation. Track 1 *can* proceed
   on the current split, but converges faster once this lands.
-- **Track 3 — Network layer (deferred).** Crypto → contracts → contact card →
-  msn_registry → reference exchange. Stubbed today; do not build until Track 1
-  is delivering value.
+- **Track 3 — Network layer (partly built; 2026-08-04).** Crypto → contracts →
+  contact card are **done and live since 2026-08-02**; the track was overtaken by
+  the channel work. Remaining: `msn_registry` (discovery without a contract) and
+  resolving a reference against a remote instance.
 - **Track 4 — Desktop app + local DB (long horizon).** Persistence is already
   form-factor-agnostic, so this is a packaging exercise, not a rewrite.
 
@@ -51,7 +52,7 @@ Delta shorthand used throughout:
 | D2 | materialization read/write split (two codecs) | HIGH | spec only |
 | D3 | no hyphae-flag mechanism; MSS-vs-SAMRAS terminology drift | MED | spec only |
 | D4 | no Utilities-manage / Control-Panel-toggle lens UX | MED | spec only |
-| D5 | network / crypto / contract future stubbed | LOW now / HIGH later | spec only |
+| D5 | network transport BUILT (2026-08-02); discovery + remote reads missing | MED | partly built |
 | D6 | desktop app + local DB | long horizon | spec only |
 
 ---
@@ -77,7 +78,7 @@ The recognition/identity logic is **duplicated**: the MSS-hash and
 address-recognition routines live both in
 [`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
 and in the adapter
-[`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py),
+`micyte/adapters/sql/datum_semantics.py` (removed 2026-09-10; the engine is [`micyte/core/datum_semantics/engine.py`](../../micyte/core/datum_semantics/engine.py)),
 so the canonical engine is ambiguous.
 
 There is **no boundary test** asserting that `core/datum_ops` may not import
@@ -100,15 +101,14 @@ There is **no boundary test** asserting that `core/datum_ops` may not import
     [`fnd_app/tests/architecture/`](../../fnd_app/tests/architecture) so the
     inversion can never silently return.
 
-0d. **Document the future stubs** (Track 3 dirs) as deliberately empty so they
-    are not mistaken for dead code: see
-    [`micyte/core/crypto`](../../micyte/core/crypto),
-    [`micyte/domains/contracts`](../../micyte/domains/contracts),
-    [`micyte/domains/reference_exchange`](../../micyte/domains/reference_exchange),
+0d. **Document the remaining stubs** so they are not mistaken for dead code:
     [`micyte/state_machine/mediation_surface`](../../micyte/state_machine/mediation_surface),
     [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes), and
-    [`micyte/tools/_shared`](../../micyte/tools/_shared)
-    (each is a `README.md` + `__init__.py` placeholder today).
+    [`micyte/tools/_shared`](../../micyte/tools/_shared) — each still a
+    `README.md` + `__init__.py` placeholder. **`micyte/core/crypto`,
+    `micyte/domains/contracts` and `micyte/domains/reference_exchange` are no
+    longer stubs** (built 2026-08-02) and their `__init__.py` scaffold docstrings
+    are misleading leftovers, not a description of the package.
 
 > **Landing in THIS batch:** 0a + 0b + 0c. A sibling unit relocates the engine
 > into `core/datum_semantics/`, flips the two imports, and adds the boundary
@@ -136,7 +136,7 @@ D4 (the lens-management UX it depends on).
    and identity live in
    [`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
    and the adapter
-   [`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py).
+   `micyte/adapters/sql/datum_semantics.py` (removed 2026-09-10; the engine is [`micyte/core/datum_semantics/engine.py`](../../micyte/core/datum_semantics/engine.py)).
    The "minimum-but-complete" path (smallest set of flags that still round-trips
    a document) is specified in
    [`60-canonical-datum-and-hyphae-flags.md`](60-canonical-datum-and-hyphae-flags.md).
@@ -189,7 +189,7 @@ on WORKBOOK-YAML.
 - **MSS vs SAMRAS terminology drift** (D3). MSS identity lives in
   [`micyte/core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
   (`MSS_VERSION_HASH_POLICY = "mos.mss_sha256_v1"`), recognition/parsing lives in
-  [`micyte/adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py),
+  `micyte/adapters/sql/datum_semantics.py` (removed 2026-09-10; the engine is [`micyte/core/datum_semantics/engine.py`](../../micyte/core/datum_semantics/engine.py)),
   and the SAMRAS structures live under
   [`micyte/core/structures/samras`](../../micyte/core/structures/samras).
   The same concepts wear different names across these three homes. The spec
@@ -220,54 +220,83 @@ on WORKBOOK-YAML.
 
 ---
 
-## Track 3 — Network layer (deferred)
+## Track 3 — Network layer (partly built)
 
-**Goal:** the eventual multi-party network — but **not now**. Everything here is
-deliberately stubbed. Build it only once Track 1 is delivering value and Track 2
-has stabilized the model.
+**Goal:** the multi-party network. This track was written as "deferred, everything
+here is deliberately stubbed" and was **overtaken by the hosted-channel work in
+August 2026**. Steps 1–3 of its build order are done and live; the instruction not
+to build until Track 1 delivers no longer describes what happened, and is recorded
+here rather than deleted so the change of course stays visible.
 
 **Deltas:** D5.
 
-### Stubbed today (README + `__init__.py` only)
+### Built and live (2026-08-02)
 
-- [`micyte/core/crypto`](../../micyte/core/crypto)
-- [`micyte/domains/contracts`](../../micyte/domains/contracts)
-- [`micyte/domains/reference_exchange`](../../micyte/domains/reference_exchange)
+| Piece | Where |
+|---|---|
+| Signature port + cipher shape | [`micyte/core/crypto`](../../micyte/core/crypto) — `signature.py`, `channel.py` |
+| Contract lifecycle | [`micyte/domains/contracts`](../../micyte/domains/contracts) — `channel.py` (`ChannelState`) |
+| Handshake, key minting, replay sequence, negotiation, key vault | `fnd_app/instances/_shared/runtime/contract_*.py`, `instance_keys.py` |
+| Contact card fields | `public_signature` `3-1-17`, `instance_endpoint` `3-1-18` (`field_registry.py:105`, `:114`) |
+| Closed-channel admission + outbound client | `closed_channel_admission.py`, `instance_client.py` |
+| P2P message form | [`micyte/domains/reference_exchange`](../../micyte/domains/reference_exchange) — `message.py` |
+
+> **The reading trap this track fell into.** The audit below called these packages
+> "empty" because each `__init__.py` is a 1-LOC `"""Inert package scaffold."""`.
+> That docstring is **still there** in packages now carrying hundreds of lines of
+> real code beside it. An `__init__` is not a census of its package — cite the
+> module that does the work.
+
+### Still genuinely stubbed
+
 - [`micyte/state_machine/mediation_surface`](../../micyte/state_machine/mediation_surface)
+- [`micyte/tools/_shared`](../../micyte/tools/_shared)
 - [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes) (also used by Track 1)
 
-> **Cleanup audit (2026-07-21).** The directories above are **intentional
-> deferred scaffolds (empty; the deferred network/crypto/handshake layer)** —
-> each is a 1-LOC `__init__.py` (`"""Inert package scaffold."""`) plus a short
-> README stub, carrying **zero functional references** (nothing `import`s them,
-> and no config or test depends on them — only the descriptive citations in this
-> wiki). They are safe to carry as-is or remove later. Audited scaffolds, at
-> their **actual on-disk paths**: `micyte/core/crypto`,
-> `micyte/domains/contracts`, `micyte/domains/reference_exchange`,
-> `micyte/state_machine/mediation_surface`,
-> `fnd_app/packages/sandboxes/orchestration`,
-> `fnd_app/packages/sandboxes/system` (plus the similar `micyte/tools/_shared`).
-> Note the two `domains` scaffolds now live under `micyte/domains/`, **not**
-> `fnd_app/packages/modules/domains/` as the links above still read.
+> **Cleanup audit (2026-07-21) — HISTORICAL, and half of it is now wrong.** It
+> found seven "intentional deferred scaffolds (empty)", each a 1-LOC `__init__.py`
+> plus a README stub with zero functional references. That was accurate on
+> 2026-07-21. Since 2026-08-02, **`micyte/core/crypto`,
+> `micyte/domains/contracts` and `micyte/domains/reference_exchange` carry real
+> modules and are imported by live code** — see the table above. The audit's
+> remaining four (`state_machine/mediation_surface`,
+> `fnd_app/packages/sandboxes/orchestration`, `.../system`, `micyte/tools/_shared`)
+> still hold. The audit is kept because *how* it went wrong is the lesson: it
+> censused packages by their `__init__`.
+>
+> One note from it still stands: the two `domains` packages live under
+> `micyte/domains/`, **not** `fnd_app/packages/modules/domains/` as some links in
+> this wiki still read.
 >
 > **Vestigial artifact.** The in-repo `agentic/evidence/reports/*.md` (4 files,
 > dated 2026-05-10) is **vestigial** — superseded records with zero code/config
 > references; it is prunable. No live code or config reference points at the
 > in-repo copy.
 
-### Intended build order (within this track)
+### Remaining build order
 
-1. **crypto** — signing/identity primitives ([`core/crypto`](../../micyte/core/crypto)).
-2. **contracts** — the agreement model ([`modules/domains/contracts`](../../micyte/domains/contracts)).
-3. **contact card + default FND subordinate** — a node's published identity,
-   defaulting to an FND-subordinate relationship.
-4. **msn_registry** — the network's name/address registry.
-5. **template-driven fill** — contact cards and contracts populated from
-   templates.
-6. **reference exchange** — cross-node reference sharing
-   ([`modules/domains/reference_exchange`](../../micyte/domains/reference_exchange)),
-   brokered through the
-   [`mediation_surface`](../../micyte/state_machine/mediation_surface).
+1. ~~**crypto**~~ · ~~**contracts**~~ · ~~**contact card**~~ — **done 2026-08-02.**
+   The "default FND-subordinate relationship" was never built and is superseded:
+   discovery needs no relationship at all (step 2).
+2. **`msn_registry`** — discovery without a contract, so an instance can reach a
+   peer it has never met. A contract cannot be how you learn to form a contract.
+   The publication discipline it needs already exists (`/__mss/public/stills/`).
+3. **Resolve a reference against a remote instance** — the read operation on top of
+   the transport that already works. Needs batching, partial failure, and a stated
+   rendering for an unreachable peer.
+4. **Accounts / aliases on a channel** — a member binds references and the channel
+   resolves them, per
+   the Network Cooperation Convention (2026-08-04, internal design note),
+   once 2 and 3 hold.
+
+~~**template-driven fill**~~ — **superseded, not pending.** The member binds
+references; it does not return a filled document, because a filled document is a
+second copy of its data that drifts on the next edit.
+
+**Blocking fact, not a code gap:** no two live instances have ever exchanged
+anything. FND publishes the only signature and the only endpoint in a 236-node
+registry, and it is not its own counterparty. The proof over a real socket is
+`fnd_app/tests/integration/test_contract_delivery_over_tcp.py`.
 
 **Spec page:** [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
 
@@ -382,7 +411,8 @@ and **three code fixes** that close Track 0's D1:
    duplication between
    [`core/mss/datum_identity.py`](../../micyte/core/mss/datum_identity.py)
    and
-   [`adapters/sql/datum_semantics.py`](../../micyte/adapters/sql/datum_semantics.py)).
+   `adapters/sql/datum_semantics.py`; the re-export shim that kept the old path
+   importable was itself removed 2026-09-10).
 2. Flipped the inverted imports in
    [`core/datum_ops/ops.py`](../../micyte/core/datum_ops/ops.py) and
    [`core/datum_ops/node_ops.py`](../../micyte/core/datum_ops/node_ops.py)

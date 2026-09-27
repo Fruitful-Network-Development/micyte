@@ -1,0 +1,45 @@
+template_id: events
+schema: mycite.v2.datum.standard.events.v1
+sandbox: "*"
+archetype: standard_event_row
+description: >
+  Dated occurrences — anything that happened, or is scheduled to. One row per
+  event in layer 4 / value-group 6.
+
+  `occurred_at` is a UTC magnitude against the sandbox anchor's `utc` babelette
+  (`rf.3-1-6` in a farm namespace), NOT a formatted string. A date written as
+  text is a date no calendar surface can order, and the portal already has a
+  calendar that reads the utc chain.
+
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.standard.events.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "{{sandbox}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+repeating_archetype:
+  layer: 4
+  value_group_reference_design:
+    title:
+      magnitude_kind: trimmed_string
+      required: true
+    occurred_at:
+      magnitude_kind: utc_seconds
+      required: true
+    kind:
+      magnitude_kind: trimmed_string
+      required: false
+    subject:
+      magnitude_kind: trimmed_string
+      required: false
+    note:
+      magnitude_kind: trimmed_string
+      required: false

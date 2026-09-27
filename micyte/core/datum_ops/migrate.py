@@ -20,15 +20,13 @@ from micyte.core.document_naming import (
 )
 from micyte.core.mss import compute_mss_hash
 from micyte.core.structures.samras.codec import decode_canonical_bitstream
-from micyte.core.structures.samras.validation import InvalidSamrasStructure
 
 from .ops import Workbook, apply_sequence, order_sheets
 from .refs import defined_node_addrs
 from .rules_loop import check_step
 from .samras_deps import (
-    ANCHOR_SAMRAS_SOURCE,
     SAMRAS_ROOT_REF,
-    build_magnitude_bitstream,
+    check_denotation,
 )
 
 
@@ -87,28 +85,39 @@ def plan_migration(baseline: Workbook, ops: list[Any]) -> MigrationPlan:
     if not report.ok:
         raise MigrationError("rule-check failed:\n  " + "\n  ".join(report.hard))
 
-    # SAMRAS consistency: each anchor magnitude must match its source node set
+    # SAMRAS consistency: each anchor magnitude must match its source node set.
+    #
+    # Coverage is DISCOVERED (samras_deps.check_denotation) rather than looked up in a
+    # per-sandbox address map, so every sandbox and every *-SAMRAS structure is examined —
+    # the old map described the agro_erp anchor and silently examined nothing at all in the
+    # registrar, whose lcl magnitude sits at 1-1-6.
+    #
+    # A finding aborts the plan only when THIS migration is responsible for it: a divergence
+    # that was already in the baseline is a pre-existing corpus condition, and failing an
+    # unrelated migration over it would hold every future edit hostage to someone else's open
+    # decision. Those become advisories, which the mutation runtime already surfaces.
+    samras_advisories: list[str] = []
     if "anchor" in final.names():
-        for row in final.sheet("anchor").rows:
-            raw = row.raw
-            if not (isinstance(raw, list) and raw and isinstance(raw[0], list) and len(raw[0]) >= 3):
+        final_sheets_by_name = {name: final.sheet(name) for name in final.names()}
+        for finding in check_denotation(final.sheet("anchor"), final_sheets_by_name):
+            if finding.status in ("coherent", "unpaired"):
                 continue
-            if str(raw[0][1]) != SAMRAS_ROOT_REF:
+            source = finding.structure
+            baseline_set = (
+                defined_node_addrs(baseline.sheet(source))
+                if source in baseline.sheets else set()
+            )
+            caused = baseline_set != defined_node_addrs(final_sheets_by_name[source])
+            if not caused:
+                samras_advisories.append(f"pre-existing: {finding.summary()}")
                 continue
-            source = ANCHOR_SAMRAS_SOURCE.get(row.datum_address)
-            if source is None or source not in final.names():
-                continue
-            # exact structural match (count equality is insufficient: a relocate can
-            # preserve the closure size while changing the tree shape).
-            try:
-                expected_bits = build_magnitude_bitstream(defined_node_addrs(final.sheet(source)))
-            except InvalidSamrasStructure as exc:
-                raise MigrationError(f"{source} node set is not SAMRAS-encodable: {exc}") from exc
-            if str(raw[0][2]) != expected_bits:
+            if finding.status == "uncompilable":
                 raise MigrationError(
-                    f"SAMRAS {row.datum_address} does not match the current {source} node "
-                    f"set — a RecompileMagnitude is missing"
-                )
+                    f"{source} node set is not SAMRAS-encodable: {finding.detail}")
+            raise MigrationError(
+                f"SAMRAS {finding.magnitude_addr} does not match the current {source} node "
+                f"set — a RecompileMagnitude is missing"
+            )
 
     # determine the touched-sheet cascade + re-mint canonical ids
     touched: dict[str, TouchedSheet] = {}
@@ -144,5 +153,5 @@ def plan_migration(baseline: Workbook, ops: list[Any]) -> MigrationPlan:
         touched=touched,
         write_order=order_sheets(touched.keys()),
         expectations=expectations,
-        advisories=list(report.advisory),
+        advisories=[*report.advisory, *samras_advisories],
     )

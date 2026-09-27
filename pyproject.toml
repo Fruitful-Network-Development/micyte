@@ -1,6 +1,21 @@
+# Repo-root configuration.
+#
+# This repo holds two products. `micyte/` is MiCyte — the MOS datum operating
+# environment — and is what [project] below packages and what micyte.com will
+# offer. `fnd_app/` is FND grantee services, the application FND runs on top of
+# it. The dependency is one-way (FND -> MiCyte) and enforced by
+# fnd_app/tests/architecture/test_micyte_fnd_boundary.py.
+#
+# Only MiCyte is packaged. FND services are deployed from a git checkout and
+# have no reason to be installable.
+
 [project]
 name = "micyte"
-version = "0.2.0"
+# ONE VERSION, READ FROM THE PACKAGE. This said 0.1.0 while micyte/__init__.py said
+# 0.2.0 and micyte.com/get published a micyte-0.2.0 wheel — so a wheel built from
+# this file would have shipped under a version number the release notes contradict.
+# hatchling reads the attribute, so there is nothing left to keep in step.
+dynamic = ["version"]
 description = "A datum operating environment: a local MOS database, and an address on a shared network."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -19,12 +34,16 @@ classifiers = [
 # document transport format; shapely is the geometry engine behind the HOPS
 # plot-packing / polygon code (micyte.core.hops.square_pack imports it at module
 # level, so it is a hard import-time dep, not optional). Notably NOT boto3 — that
-# absence is a useful smell test that the software carries no cloud coupling.
+# absence is a useful smell test that the boundary is intact: every AWS dependency
+# lives on the FND side.
 dependencies = ["pyyaml>=6.0", "shapely>=2.0"]
 
 [project.urls]
 Homepage = "https://micyte.com"
-Source = "https://github.com/Fruitful-Network-Development/micyte"
+Source = "https://github.com/Fruitful-Network-Development/mycite-core"
+
+[tool.hatch.version]
+path = "micyte/__init__.py"
 
 [build-system]
 requires = ["hatchling"]
@@ -34,13 +53,18 @@ build-backend = "hatchling.build"
 packages = ["micyte"]
 
 [tool.hatch.build.targets.sdist]
-# The sdist carries the package, its licence, and the docs that ship with it.
-include = ["micyte", "LICENSE", "README.md", "docs/wiki", "docs/standards", "docs/contracts"]
+# The sdist carries the package, its licence and the docs that ship with it.
+# It must NOT carry fnd_app/ — that is FND's application, not MiCyte's.
+include = ["micyte", "LICENSE", "README.md", "docs/wiki", "docs/standards"]
 
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = ["docs"]
+extend-exclude = [
+    "docs",
+    "evidence",
+    "knowledge",
+]
 
 [tool.ruff.lint]
 # Enabled rule sets:
@@ -52,15 +76,45 @@ extend-exclude = ["docs"]
 #   RUF ruff-specific rules
 select = ["E", "F", "I", "UP", "B", "RUF"]
 ignore = [
-    "E501",   # line length — long URLs / comments fine
-    "B008",   # function call in default args — dataclass-defaults pattern
+    "E501",   # line length — ruff format handles most cases; long URLs / comments fine
+    "B008",   # function call in default args — Flask + dataclass-defaults pattern
     "RUF012", # mutable class defaults — false-positive on dataclass-style classes
 ]
+# Typographic characters used intentionally in docstrings/comments (e.g.
+# "3 × 4" cost math, en-dash ranges). Allowed so RUF002/RUF003 don't flag them.
 allowed-confusables = ["×", "–"]
 
 [tool.ruff.lint.per-file-ignores]
+# Tests do sys.path.insert(0, REPO_ROOT) before fnd_app imports (the project
+# is not pip-installed); allow E402 there. Tests also reuse fixtures and import
+# things they don't directly call (skipUnless guards, etc); allow F401 + F811.
+"fnd_app/tests/**/*.py" = ["F401", "F811", "E402"]
+# Scripts under fnd_app/scripts/ do the same sys.path prepend before
+# fnd_app imports — they're CLI entry points, not library code.
+"fnd_app/scripts/**/*.py" = ["E402"]
+# Top-level scripts/ (benchmarks, one-off tooling) do the identical
+# sys.path.insert(ROOT) before first-party imports — same entry-point pattern.
+"scripts/**/*.py" = ["E402"]
 # Package __init__ files deliberately re-export public surface via
-# `from .shell import *`; ruff cannot statically resolve the names.
+# `from .shell import *`. That's the canonical aggregator pattern; ruff cannot
+# statically resolve the names, so allow F403/F405 + the dunder-all unsort here.
+# micyte/** is listed alongside fnd_app/packages/** because the MOS trees moved
+# there in the 2026-07-16 extraction; the exemptions follow the code.
 "micyte/**/__init__.py" = ["F403", "F405", "RUF022"]
-# shell.py is an aggregator that mirrors sibling modules via wildcard imports.
+"fnd_app/packages/**/__init__.py" = ["F403", "F405", "RUF022"]
+"fnd_app/instances/**/__init__.py" = ["F403", "F405", "RUF022"]
+# shell.py is a 1,750-LOC aggregator that mirrors sibling modules via wildcard
+# imports (documented in Phase 12 evidence). The duplicate-definition postcondition
+# pins the canonical-home rule; ruff star-import lints don't add signal here.
 "micyte/state_machine/portal_shell/shell.py" = ["F403", "F405"]
+# portal_cts_gis_runtime defines paired (comment, constant) blocks
+# interleaved with imports for readability — the imports follow the
+# constants they document.
+"fnd_app/instances/_shared/runtime/portal_cts_gis_runtime.py" = ["E402"]
+# app.py imports flask behind a try/except fallback-stub block, then does its
+# real imports; utilities_extensions modules + newsletter_state set a
+# module-level `_log` before grouped imports. Same intentional house style as
+# above — the imports deliberately follow module-level setup.
+"fnd_app/instances/_shared/portal_host/app.py" = ["E402"]
+"fnd_app/instances/_shared/runtime/utilities_extensions/*.py" = ["E402"]
+"fnd_app/packages/adapters/filesystem/newsletter_state.py" = ["E402"]

@@ -34,7 +34,28 @@ The workbench panel **materializes the datum at the current AITAS spatial positi
 
 The workbench does not interpret the data — it materializes it.
 
+#### The workbench is the only foreground region (2026-08-16)
+
+There is no overlay layer. Tools, app hubs, the AGNET channel and the datum cell editor all
+render INSIDE the workbench, and the two overlay hosts (`#portalToolOverlay`,
+`#portalDatumOverlay`) are retired.
+
+This is a statement about state, not about layout. An overlay's open-ness lived only in the
+client: it had no query key, so it could not be bookmarked, shared, reloaded onto, or
+returned to with the back button — the one part of the shell whose position was not a
+value. Folding those surfaces into the workbench puts them back under the same rule as
+every other spatial value: **the address names what is on screen**.
+
+The Compendium is the same rule applied to the datum corpus itself. Its three levels —
+sandbox shelf, document gallery, document face — are the spatial value at three depths, and
+each is a query the operator can hold onto (`sandbox_filter`, `document`, `doc_view`).
+
 ### Interface Panel
+
+> **Retired as a REGION.** `shell_composition` emits `activity_bar` and `workbench` only.
+> The mediation role below is still real and still performed — it now renders as workbench
+> content (a tool host, or a document's scope face) rather than in a third column. Read
+> this section for the distinction it draws, not for the layout it assumes.
 
 The interface panel **returns mediation output with respect to the current AITAS state**.
 
@@ -48,6 +69,19 @@ The interface panel **returns mediation output with respect to the current AITAS
   facets of the current state without any of them changing the spatial value.
 
 ### Control Panel
+
+> **Retired as a REGION (2026-08-16).** `shell_composition.regions` is exactly
+> `{activity_bar, workbench}`. The measurement that ended it: under 960px the CSS made
+> `#portalControlPanel` a fixed drawer pinned over the workbench, and the menubar clipped
+> the one toggle that could close it — so the portal could not be used from a phone at
+> all. What the panel carried that was a real fact about a surface now travels WITH that
+> surface: Sources with the sandbox (`compendium.sources`), section nav with the page
+> (`surface_payload.section_nav`), the log filters with the log table
+> (`surface_payload.selection_strip`), the install target with the marketplace
+> (`surface_payload.install_target`). What it carried that was NOT — a Directive Terminal
+> disabled on every instance, a lens readout with no toggle, a state reflection of what
+> the canonical query already says, an identity row the menubar repeats — is gone.
+> The distinction the section draws is still true; the column it assumes is not.
 
 The control panel **exposes state machine controls**: verb tabs, operation selectors, navigation
 arrows, the directive terminal, and context condition rows.

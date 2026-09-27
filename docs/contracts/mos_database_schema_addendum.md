@@ -16,17 +16,18 @@ not by additional relational schemas.
 ## §1 — `documents` (the only new table; replaces / renames `files`)
 
 Primary document entity with enforced canonical naming. The prefix
-discriminates between the three datum-document file types — `lv.` sandbox sources,
-`stl.` binary payloads, and `cptr.` cached sources.
+discriminates between the four datum-document file types — `lv.` sandbox sources,
+`stl.` binary payloads, `cptr.` cached sources, and `art.` artifacts (added 2026-08-23;
+the taxonomy's `art` row says what one is).
 
 ```sql
 CREATE TABLE documents (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     tenant_id       TEXT    NOT NULL,
-    document_id     TEXT    NOT NULL UNIQUE,        -- canonical lv./stl./cptr. id
-    prefix          TEXT    NOT NULL CHECK (prefix IN ('lv','stl','cptr')),
+    document_id     TEXT    NOT NULL UNIQUE,        -- canonical lv./stl./cptr./art. id
+    prefix          TEXT    NOT NULL CHECK (prefix IN ('lv','stl','cptr','art')),
     msn_id          TEXT    NOT NULL,
-    sandbox         TEXT,                            -- NULL for stl./cptr.
+    sandbox         TEXT,                            -- NULL for stl./cptr./art.
     name            TEXT    NOT NULL,
     version_hash    TEXT    NOT NULL,                -- 64-char hex SHA-256 over MSS form
     is_anchor       INTEGER NOT NULL DEFAULT 0 CHECK (is_anchor IN (0, 1)),
@@ -48,7 +49,7 @@ Naming validation regex (enforced at the SQL adapter boundary by
 ```
 ^lv\.[^.]+\.[^.]+\.[^.]+\.[a-f0-9]{64}$
 |
-^(stl|cptr)\.[^.]+\.[^.]+\.[a-f0-9]{64}$
+^(stl|cptr|art)\.[^.]+\.[^.]+\.[a-f0-9]{64}$
 ```
 
 `legacy_alias` is retained for one cycle to keep readers compatible with the legacy
@@ -113,7 +114,7 @@ either:
 
 - into the row itself (`hyphae_chain_json` on `datum_row_semantics`), or
 - into a pure-stdlib core library (`micyte/core/samras`, `micyte/core/hops`,
-  `micyte/core/datum_editing`, `micyte/core/mss`, `micyte/core/document_naming`).
+  `micyte/core/mss`, `micyte/core/document_naming`).
 
 This keeps the relational surface narrow (one canonical-name table plus the existing
 row-semantics tables) while the algorithmic mass — bullet-proof datum editing,
@@ -129,3 +130,33 @@ independently-testable Python libraries.
 The other prior-schema tables proposed in the 2026-05-03 audit are withdrawn for the
 reasons in §2–§5. Follow `datum_document_naming_taxonomy.md` and the core libraries
 listed above instead.
+
+
+## 2026-09-21 — the record is the per-document row (TASK-2026-09-17-001, phase A)
+
+`authoritative_catalog_snapshots` is no longer read for the catalog nor consulted for the
+index. Measured on the live store that day: `documents` ⋈ `datum_document_semantics` held
+every one of the blob's 116,497 rows (42 documents differing in row order only — the payload
+is canonical order), the same `document_metadata` and `source_kind`, the 192 artifacts the
+blob never carried, and the 2026-09-10 append to `registrar.address_nodes` whose base id the
+blob's 09-18 rewrite no longer held — which `_apply_pending_appends` dropped by rule, so the
+two readers disagreed about that document for eleven days.
+
+* `datum_document_provenance` (new) carries what the hashed payload does not: `document_name`,
+  `relative_path`, `source_authority`, `warnings`, and the anchor context
+  (`anchor_document_name/path/metadata`, `anchor_rows`) the document was written with —
+  preserved exactly, never refreshed, because anchor rows feed a document's row hyphae and a
+  "current" anchor moves every row's hash (measured). Written by every door through
+  `_upsert_documents_index`; healed once from the blob (`json_each`, no Python parse) for a
+  store written before the table existed.
+* `read_authoritative_datum_documents` assembles from the tables in index order (a re-key
+  keeps its row id, so a replaced document keeps its place). `read_document_index` projects
+  from the same assembly and is fresh while the tables' newest `updated_at_unix_ms` /
+  `created_at` matches its stamp. The blob path survives as `_read_catalog_from_blob`, the
+  fallback for a store whose semantics table holds no `lv.` document, and the reference
+  `fnd_app/scripts/verify_catalog_parity.py` compares against.
+* `store_authoritative_catalog` indexes what it stores. The delta tables
+  (`document_creates`, `document_row_appends`) are still written and no longer read.
+* Phase B (next): the four blob-writing doors stop writing it. Phase C: the bitstream
+  beside the row, once the codec decodes an empty document and the closure carries a foreign
+  reference (see the task's report). Phase D: the id flip, the operator's.

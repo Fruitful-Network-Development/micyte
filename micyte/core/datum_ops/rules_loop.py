@@ -26,7 +26,7 @@ from micyte.core.structures.samras.codec import decode_canonical_bitstream
 from micyte.core.structures.samras.validation import InvalidSamrasStructure
 
 from .ops import Workbook
-from .refs import build_reference_index
+from .refs import build_reference_index, markers_for_workbook
 from .samras_deps import SAMRAS_ROOT_REF
 
 
@@ -76,7 +76,22 @@ def check_step(workbook: Workbook) -> StepReport:
     # references are part of the model (a farm's product rows are keyed to taxon
     # nodes owned by the `taxonomy` sandbox), so checking a lone sandbox's
     # definitions reports them all as dangling and aborts the plan.
-    index = build_reference_index(workbook)
+    # THE MARKERS ARE THIS NAMESPACE'S, resolved once and reported when they are not.
+    # Until 2026-09-01 this used the UNION of three namespaces' node-ref markers for every
+    # document, and `rf.3-1-1` is `txa_id` in `farm`/`taxonomy` but `coordinate` in
+    # `registrar`/`archetype` and `utc` in `system`. Measured across the live store: 162,249
+    # dangling references reported out of 163,643 edges — 99.1% false, 162,102 of them
+    # coordinates and timestamps. On a HARD check that `datum_workbook_apply` turns into a
+    # refusal, that was a live write blocker for every registrar and agnet workbook.
+    markers, blind = markers_for_workbook(workbook)
+    if blind:
+        # ADVISORY, not silent. A fallback run still checks references — it just also
+        # flags literals, so its hard failures cannot be trusted without knowing that.
+        report.advisory.append(
+            f"reference check ran on the UNION of namespace markers ({blind}); "
+            "literals typed as coordinates or timestamps may be reported as dangling"
+        )
+    index = build_reference_index(workbook, markers)
     defined = index.defined_nodes() | set(workbook.external_nodes)
     for edge in index.edges:
         target = edge.target_node_addr

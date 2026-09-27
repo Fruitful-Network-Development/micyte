@@ -1,430 +1,323 @@
 # 90 — Network & Contract Architecture
 
-> Status: design-spec
+> Status: **part as-built, part design-spec** (rewritten 2026-08-04)
 > [← Overview](00-overview-and-glossary.md)
 
-This page specifies the **future network layer** for a MiCyte portal instance:
-how one portal advertises itself, how two portals establish an encrypted
-relationship, and how they exchange datum documents under that relationship. It
-is the single largest delta between the current codebase and the product vision:
-**almost every package this layer needs is an empty 1-LOC scaffold today.**
+This page specifies the **network layer** for a MiCyte portal instance: how one
+instance advertises itself, how two instances establish an authenticated encrypted
+relationship, and how they exchange datum documents under it.
 
-Everything under **Proposed model**, **Data shapes / interfaces**, and
-**Migration path** is a *proposal*. The **Current reality** section is grounded
-in code that exists today (cited `path:line`). Nothing here authorizes
-implementing crypto or contract code; this page exists so that work can be
-planned coherently.
+**Read this first.** Until 2026-08-04 this page opened by declaring that "almost
+every package this layer needs is an empty 1-LOC scaffold today". That was true
+when it was written and has been false since **2026-08-02**. Identity, the signed
+handshake, the minted symmetric key, replay protection, closed-channel admission
+and an outbound client are all **live**. Anyone building "the network layer" from
+scratch is building a second one.
+
+Sections are labelled. **As-built** claims cite `path:line`. **Proposed** sections
+are proposals and nothing here authorizes implementing them.
+
+The account/alias model — what it means for one instance to have a *presence* on
+another's channel — is **not specified here**. It has its own design of record:
+the Network Cooperation Convention (2026-08-04, internal design note).
+This page owns the transport under it.
 
 ---
 
 ## Problem
 
-The product vision describes a peer-to-peer network of portal instances:
+A peer-to-peer network of portal instances, where:
 
-- Each instance exposes an **msn contact card** and an **FND profile card** as
-  its public-facing point of contact. The card tells outside APIs *what is
-  available for request* and *what the instance's public key is*.
-- An instance tracks **contracts**: relationships established via
-  **asymmetric-encryption key exchange** that then run on a **timely (rotating)
-  symmetric key**.
-- In a contract, roles assign one party **Manager** and the other
-  **Subordinate**. Multiple relationships can exist, and either party may take
-  either role across different relationships.
-- Under a relationship, the **Manager** publishes **YAML-convention template
-  files** (and optionally a base **MSS form** of a datum document). The
-  **Subordinate** fills *only the empty/undefined datum fields* of that template,
-  using the **same pre-defined datum-base reference abstractions** the Manager
-  used, then **recompiles the MSS form**. That recompiled MSS *is* the
-  Subordinate's contribution to the relationship. This is also the mechanism for
-  **resource sharing**.
-- Because the `msn_id` structure is always changing, every portal holds a
-  **default Subordinate relationship to the FND legal-entities portal**. FND is
-  the Manager and defines the field for the `msn_id` contact card (domain
-  reachable, and/or IPv4, and/or IPv6); each Subordinate fills in its own
-  reachable access domain/IP for its `msn_id`.
-- The FND portal's `msn_id` contact card additionally defines **public resources
-  that can be pulled without a contract** — the **`msn_registry` MSS file**: the
-  datum-entry abstractions of all current `msn_id` contact cards (DNS-like) and
-  where they can be reached.
-
-**Today none of this network behavior exists.** The packages reserved for it are
-inert scaffolds, and the one "network" service that does exist is a *read-only
-presenter* of the local system log — not a network transport. See below.
+- each instance publishes a **contact card** — its point of contact, saying what
+  it is reachable at and what its public key is;
+- instances track **contracts**: relationships bootstrapped by asymmetric key
+  exchange and then run on a **rotating symmetric key**;
+- under a contract, instances exchange datum documents and **share resources**
+  without either side hosting a second copy of the other's data;
+- discovery works before any contract exists, because a contract cannot be the
+  thing that tells you how to form a contract.
 
 ---
 
-## Current reality
+## As-built (LIVE since 2026-08-02)
 
-Mapping each vision element to the code that would host it. Unless noted, the
-package is a **2-file scaffold** (`README.md` + `__init__.py`) with no behavior.
+Every claim in this section is code on the box today. Commits: `e9af4d3b`,
+`21f04959` (handshake + transport), and the outbound client that followed.
 
-### Reserved-but-empty stubs
+### Identity comes from the contact card, never from the contract
 
-| Vision element | Stub package | Evidence |
+The card publishes `public_signature` — **registrar address `3-1-17`**
+(`micyte/core/datum_ops/field_registry.py:105`). That is the identity a
+handshake verifies against.
+
+**It cannot live on the contract.** A contract carrying the key that authorises
+it authorises itself. The test that pins the rule clears the card entry, leaves
+the contract `ACTIVE`, and asserts the handshake refuses.
+
+The **address** is a second card field, `instance_endpoint` — **`3-1-18`**
+(`field_registry.py:114`) — and not the `dns` cell, which is a *website* domain.
+Publishing an endpoint is both the opt-in to being reachable and the switch that
+makes the inbound route answer at all. See
+`micyte/core/identities/domains.py` for the domain validation it reuses.
+
+> **Encoding trap, permanent:** the `niu-baciloid-256-64` babelette holds **64
+> characters**, not 256 bits. An Ed25519 PEM is ~113 characters and does **not**
+> fit. Base64 of the raw 32 bytes is 44 and does. The PEM is rebuilt at verify
+> time.
+
+### The handshake
+
+`fnd_app/instances/_shared/runtime/contract_handshake.py`
+
+| Step | Function | Note |
 |---|---|---|
-| Asymmetric + symmetric key primitives | `core/crypto` | `micyte/core/crypto/README.md:3` — "Placeholder for pure cryptographic primitives split out from v1 `vault_session`." `micyte/core/crypto/__init__.py:1` — `"""Inert package scaffold."""` |
-| Contract model + Manager/Subordinate roles | `modules/domains/contracts` | `micyte/domains/contracts/README.md:3` — "Placeholder for contract domain semantics only." `__init__.py:1` inert. |
-| Cross-portal datum lookup / fill | `modules/domains/reference_exchange` | `micyte/domains/reference_exchange/README.md:3` — "Placeholder for reference-exchange domain semantics only." `__init__.py:1` inert. |
-| Sandbox orchestration (template publish/fill runtime) | `sandboxes/orchestration` | `fnd_app/packages/sandboxes/orchestration/README.md:3` — "shared sandbox orchestration helpers that do not own domain semantics." |
-| System-scoped orchestration boundary | `sandboxes/system` | `fnd_app/packages/sandboxes/system/README.md:3` — "system-scoped orchestration boundaries only." |
-| Shell-owned mediation surface | `state_machine/mediation_surface` | `micyte/state_machine/mediation_surface/README.md:3` — "shell-owned mediation surface behavior." |
+| Request | `build_request` (`:78`) | signed with the card key; carries a fresh X25519 ephemeral |
+| Verify | `verify_request` (`:111`) | against the requester's **card** signature |
+| Offer | `build_offer` (`:161`) | responder **mints the contract's symmetric key** and seals it to the ECDH |
+| Open | `open_offer` (`:220`) | requester unseals it |
+| Traffic | `seal_traffic` (`:277`) | every subsequent message sealed with that key |
+| Expiry | `key_is_expired` (`:305`) | epoch + `key_period_seconds`, a parameter so rotation is testable in ms |
 
-### Partial / related code that exists
+A signature key **signs**; it does not agree. Signing the ephemeral is what stops
+a machine-in-the-middle — that is why both are present and neither is enough.
 
-- **"Network" today is local-only, read-only.**
-  `fnd_app/packages/modules/cross_domain/network_root/service.py:20`
-  (`NetworkRootReadModelService`) is a *presenter* over the portal-instance
-  **system-log workbench**, not a network transport. Its own notes are explicit:
-  `service.py:60-62` — "NETWORK is the portal-instance system-log workbench …
-  read-only, non-reducer-owned, and does not host tool or sandbox runtime
-  behavior." The result `kind` is `network_system_log_workspace`
-  (`service.py:68`). It already surfaces `contract_filters` / `contract_count`
-  / per-record `contract_id` (`service.py:44`, `:56`, `:102`) — but those are
-  filters over the *local* audit log, **not** cross-portal contracts.
+Schemas: `mycite.v2.network.contract.request.v1` / `.offer.v1` / `.sealed.v1`
+(`:39-41`). Skew tolerance `HANDSHAKE_SKEW_SECONDS = 120` (`:45`).
 
-- **Read-model port for that surface.**
-  `micyte/ports/network_root_read_model/contracts.py:44`
-  (`NetworkRootReadModelRequest`) carries `portal_tenant_id` + optional
-  `portal_domain` (`:45-47`); the port protocol
-  `NetworkRootReadModelPort.read_network_root_model` is at
-  `contracts.py:150`. This is the natural read seam to extend for a future
-  `msn_registry` read — but it currently returns only local system-log payloads.
+### Replay protection is a sequence, not a nonce
 
-- **Domain validation (no IP support yet).**
-  `micyte/core/identities/domains.py:14` (`is_plain_domain`) and
-  `:37` (`require_plain_domain`) validate plain DNS domains only. There is **no**
-  IPv4/IPv6 validation, which the `msn_id` contact-card field requires
-  ("domain reachable and/or IPv4 and/or IPv6").
+`contract_sequence_store.py` — a SQLite store at `contract_transport.sqlite3`
+(`:30`) that **both gunicorn workers write**, with an atomic
+`UPDATE … WHERE last_seq < ?` (`accept_sequence`, `:57`).
 
-- **Portal authority read seam.**
-  `micyte/ports/portal_authority/contracts.py:49`
-  (`PortalAuthorityRequest`) and `:81` (`PortalAuthoritySource`: capabilities +
-  `tool_exposure_policy` + `ownership_posture`). Its README is explicit that
-  **grant mutation, identity hashing, and runtime composition are out of scope
-  this phase** (`micyte/ports/portal_authority/README.md:15-19`).
-  This seam describes *what a portal exposes* locally; a network layer would
-  consume it to decide what to advertise on a contact card.
+This replaced a per-process nonce cache, which two workers made unsound. A
+sequence beats a nonce twice over: bounded state, and it carries **ordering**.
 
-- **The only "symmetric_key" reference is a deny-list, not an implementation.**
-  `fnd_app/packages/modules/cross_domain/local_audit/service.py:25` lists
-  `"symmetric_key"` inside `FORBIDDEN_LOCAL_AUDIT_KEYS`
-  (`service.py:18-30`, alongside `private_key`, `hmac_key`, `api_key`, …). i.e.
-  the codebase already *forbids persisting* key material into the local audit
-  log — there is no code that creates, rotates, or transports a symmetric key.
+### Contract lifecycle
 
-### Building blocks that already work (the network layer will compose these)
+`contract_negotiation.py` — `open_request` (`:61`), `receive_request` (`:166`),
+`accept_request` (`:189`), `answer_request` (`:210`), `refuse_request` (`:289`),
+`revoke_contract` (`:297`). `_legal_events` (`:157`) derives the legal moves from
+the record's state, so an illegal move raises rather than being written.
 
-- **MSS form + version hash.**
-  `micyte/core/mss/datum_identity.py:101`
-  (`compute_mss_hash`) computes the canonical MSS version hash under policy
-  `MSS_VERSION_HASH_POLICY = "mos.mss_sha256_v1"` (`:13`); hyphae chains derive
-  at `:126` (`derive_hyphae_chain`). The SQL-side equivalents
-  `build_document_version_identity` / `build_document_semantics` /
-  `preview_document_insert` live in
-  `micyte/adapters/sql/datum_semantics.py:136`, `:209`, `:474`.
-  → The Subordinate's "recompile the MSS form" step *is* a call into this
-  existing identity engine. See `61-mss-and-hyphae-form-spec.md`.
+`contract_store.py` persists records as `mycite.portal.contract.v2` (`:33`) under
+`<private>/contracts/`. Revoking destroys the key.
 
-- **WORKBOOK-YAML template/transport form.**
-  `micyte/core/datum_io/codec.py:97` (`workbook_to_yaml`) and `:112`
-  (`workbook_from_yaml`), schema
-  `DATUM_IO_WORKBOOK_SCHEMA = "mycite.v2.datum_io.workbook.v1"` (`:26`), with
-  single-document `to_yaml`/`from_yaml` at `:55`/`:88`. The module docstring
-  (`codec.py:1-9`) calls this a **transport-only** form that **preserves the MSS
-  version hash** on round-trip — exactly the "YAML-convention template file" the
-  Manager publishes. See `70-yaml-materialization-pipeline.md`.
+### Key material
 
-- **`msn_id`-keyed document naming.**
-  `micyte/core/document_naming/__init__.py:35` (`ParsedDocumentId`,
-  field `msn_id` at `:39`), `:65` (`format_canonical_document_id`, which
-  validates `msn_id` at `:82-84`), and `:109` (`parse_canonical_document_id`).
-  Canonical ids already embed an `msn_id` segment
-  (`lv.<msn_id>.<sandbox>.<name>.<hash>`), so a contact card *per `msn_id`* fits
-  the existing namespace.
+`instance_keys.py` — a vault at `<private>/keys/`, **0600 inside 0700**, which
+refuses to re-mint and refuses wide permissions (`_FORBIDDEN_MODE_BITS`, `:43`),
+and resolves the `vault://` ref (`resolve_vault_ref`, `:93`) that dangled since
+the start.
 
-**Net:** the *data plane* (MSS, hyphae, WORKBOOK-YAML, `msn_id` naming) exists
-and is solid. The *network plane* (keys, contracts, roles, contact card,
-registry, cross-portal exchange) is entirely unbuilt.
+An epoch is minted **once**: re-minting the *same* bytes is idempotent, different
+bytes raises. That is what makes collection-by-re-request safe (below).
 
----
+The audit deny-list at `local_audit/service.py:18-30` forbids persisting key
+material into the local log, and still does.
 
-## Proposed model
+### Closed-channel admission — two doors
 
-> All of this is a proposal. Names are suggestions for the eventual
-> implementation, chosen to fit existing seams.
+`closed_channel_admission.py`. **Sealed** traffic (possession of the contract key
+IS the proof — exactly two instances hold it) and a **signed** bootstrap (headers
+at `:37-45`, `CLOCK_SKEW_SECONDS = 300` at `:50`).
 
-### 1. Public point of contact — msn contact card + FND profile card
+Every refusal is the **identical 404** the open route gives an unknown channel.
+The reason is logged, never returned. No CORS on that route.
 
-Each portal instance publishes two related but distinct artifacts:
+### The outbound client — requests actually send
 
-- **msn contact card** (per `msn_id`): a small datum document describing *how to
-  reach this `msn_id`* and *what it offers*:
-  - reachable access: `domain` (validated by `is_plain_domain`,
-    `domains.py:14`) **and/or** IPv4 **and/or** IPv6 (new validators needed);
-  - the portal's **advertised public key** (the contract-establishment key);
-  - a manifest of **requestable resources** (sandbox/doc references the portal
-    is willing to negotiate a contract over);
-  - a manifest of **no-contract public resources** (pullable without a contract).
-- **FND profile card**: the human/brand-facing profile (the FND legal-entities
-  presentation). It is the *discovery* surface; the msn contact card is the
-  *machine* surface. The two share an `@id`/`msn_id` linkage.
+`instance_client.py` — `post_contract_request` (`:115`) to
+`POST /__instance/contract/request` (`:61`), a **sibling** family to `/__channel/`
+rather than a widening of it: `/__channel/` is GET-only by construction and that
+is what makes it safe unauthenticated, so the write door earns its own safety by
+verifying the card signature **before recording anything**.
 
-Because both are datum documents, they are authored, versioned, and transported
-with the *existing* MSS + WORKBOOK-YAML machinery — no new document format.
+`endpoint_for` (`:162`) reads the peer's address off its card.
 
-### 2. Public-key advertisement
+> **Re-requesting IS collecting.** `build_request` never persists its ephemeral,
+> so the same signed message is also the poll. Undecided → "recorded". Decided and
+> keyed → **re-seal the existing key** to the ephemeral in hand.
+> Two traps, both paid for once already: never **mint** on a collection (it
+> rotates the key out from under a counterparty who already settled, for asking
+> twice), and carry the original `key_minted_at` (restamping restarts the period,
+> so rotation never fires).
 
-The contact card carries the portal's **long-lived asymmetric public key**. This
-key is *only* used to bootstrap a contract (key agreement / authentication), not
-for bulk data. Private key material lives behind `core/crypto` (proposed home)
-and must **never** appear in the local audit log — the deny-list at
-`local_audit/service.py:18-30` already enforces this invariant and should be
-extended to cover any new key field names.
+### Crypto homes
 
-### 3. Contract establishment — asymmetric handshake → timely symmetric key
+`micyte/core/crypto/signature.py` (the port) and `channel.py` (the cipher shape),
+with the Ed25519 peripheral behind them. `core/crypto` is **no longer a scaffold**.
 
-A **contract** is established by:
+### What is genuinely still local-only
 
-1. **Discover** the counterparty's msn contact card (via the registry — §7 — or
-   a known domain/IP).
-2. **Handshake**: an asymmetric-key exchange authenticated by each party's
-   advertised public key, agreeing on a fresh **symmetric session key**.
-3. **Run**: all subsequent datum exchange under the contract is encrypted with
-   that symmetric key, which is **timely** — it has a bounded lifetime and is
-   **rotated** on a cadence (and/or on key-volume). Rotation re-runs a light
-   handshake; the contract record persists across rotations.
-
-`core/crypto` owns the primitives (key generation, agreement, symmetric
-encrypt/decrypt, rotation schedule helpers). `modules/domains/contracts` owns the
-*contract lifecycle* (propose → accept → active → rotating → revoked) and the
-*role assignment*; it must not embed crypto, only call into `core/crypto`.
-
-### 4. Manager / Subordinate roles + multiple relationships
-
-A contract names exactly two parties and assigns **roles** per *relationship*:
-
-- **Manager** — defines templates and the base MSS doc shape; owns the schema.
-- **Subordinate** — fills empty datum fields and recompiles; owns the values.
-
-A single contract can carry **multiple relationships**, and the **same party can
-be Manager in one relationship and Subordinate in another**. Roles are therefore
-a property of the *relationship*, not of the contract or the party globally.
-
-### 5. Template-driven Subordinate fill (the resource-sharing mechanism)
-
-This is the core data exchange and is built entirely on existing data-plane
-parts:
-
-1. **Manager publishes** a **WORKBOOK-YAML template** (`codec.py:97`
-   `workbook_to_yaml`) — and optionally a **base MSS document** — over the
-   contract's symmetric channel. The template contains **empty/undefined datum
-   fields** plus the **datum-base reference abstractions** (the `rf.*` reference
-   tokens / hyphae anchors) those fields resolve against.
-2. **Subordinate fills only the empty fields.** It may *not* add, move, or
-   redefine fields; it may only supply values for fields the Manager left empty,
-   and only using the *same* pre-defined datum-base abstractions. This constraint
-   is enforceable with the existing preview/validation functions
-   (`datum_semantics.py:474` `preview_document_insert` and friends) — a fill that
-   introduces a new address or changes structure is rejected.
-3. **Subordinate recompiles MSS.** Calling `compute_mss_hash`
-   (`datum_identity.py:101`) over the filled document yields a new MSS version
-   hash. **That recompiled MSS form is the Subordinate's contribution** —
-   returned to the Manager over the channel.
-4. **Resource sharing** is the same flow with the roles reading naturally: the
-   Manager "shares a resource" by publishing its shape; the Subordinate
-   "contributes" by returning a filled, recompiled MSS. Either direction of
-   sharing is just a relationship with the appropriate role assignment.
-
-`modules/domains/reference_exchange` owns step (1)/(3) marshaling: resolving
-which datum-base abstractions travel with a template, and validating that a
-returned MSS only fills declared-empty fields.
-
-### 6. Default FND Subordinate contract (msn_id field definition)
-
-Every portal ships with **one pre-established relationship**: it is a
-**Subordinate to the FND legal-entities portal** (FND is **Manager**). Because the
-`msn_id` structure changes over time, FND publishes the **template for the
-`msn_id` contact-card field** — defining which of `{domain, IPv4, IPv6}` are
-present and how they're shaped. Each portal, as Subordinate, **fills in its own
-reachable access** values and recompiles. This keeps every portal's contact card
-schema-compatible with the network's current `msn_id` convention without each
-portal hard-coding it.
-
-### 7. `msn_registry` — no-contract public pull (DNS-like)
-
-The FND portal's own msn contact card additionally exposes **public resources
-that require no contract**. The headline one is the **`msn_registry` MSS file**:
-
-- a datum document whose entries are the **datum-entry abstractions of every
-  current `msn_id` contact card** plus **where each can be accessed**
-  (domain/IPv4/IPv6);
-- pullable by any portal **without** establishing a contract — the network's
-  bootstrap/discovery layer, analogous to DNS;
-- itself an MSS document, so it is versioned and integrity-checkable with
-  `compute_mss_hash` like any other datum doc; freshness is conveyed by its MSS
-  version hash + a published timestamp.
-
-A portal that wants to contact a peer it has never met first pulls `msn_registry`
-from FND (no contract), looks up the peer's `msn_id` → contact card location,
-fetches that contact card, reads the peer's public key, and *then* runs the
-asymmetric handshake (§3) to form a contract.
+`modules/cross_domain/network_root/service.py:20` is a **presenter over the local
+system log**, not a transport. Its `contract_filters` / `contract_id`
+(`:44`, `:56`, `:102`) filter **audit-log correspondence rows** and have nothing
+to do with network contracts. Do not conflate them; the naming collision is
+recorded here so nobody "unifies" them.
 
 ---
 
-## Data shapes / interfaces
+## As-built: the channel surface
 
-> Sketches only — field names indicative. Each shape names its proposed host
-> package.
+Specified in the Hosted Channel Convention (2026-08-02, internal design note)
+and summarized here only where the network layer touches it.
 
-### msn contact card (datum document — host: authored as a normal datum doc; advertised via a new network adapter)
+- A **hosted channel** is an outward-facing surface terminating at a sandbox the
+  instance hosts. `micyte/channels/` — the third register beside `micyte/tools/`
+  and `micyte/automation/`, with mutual refusals.
+- **Open** channels admit any caller: routes under `/__channel/`, outside
+  `/portal`, **GET-only by construction**, 404-not-403. No write route is
+  registered — the posture is "no write path exists", not "writes are denied".
+  A refusal implies an authorizer that could be wrong; an absence cannot be.
+- **Closed** channels admit contract-holding instances, gated by
+  `ChannelState.ACTIVE.grants_channel` + `granted_sandboxes()`.
+- A channel is denoted **as data**, on the registrar `channels` document, one row
+  per (entity, channel, access, hosting msn). `build_profile` picks it up with
+  zero code change.
 
-```yaml
-# transported as datum_io WORKBOOK-YAML (codec.py:97), one sheet
-msn_id: <msn_id>                      # matches document_naming msn_id segment
-access:
-  domain: portal.example.org          # validated by is_plain_domain (domains.py:14)
-  ipv4: 203.0.113.10                   # NEW validator needed in core/identities
-  ipv6: "2001:db8::10"                 # NEW validator needed
-public_key:
-  alg: <RSA|ECDSA|Ed25519>            # see open questions
-  pem: <advertised public key>         # private half lives behind core/crypto
-requestable:                           # negotiable only under a contract
-  - { ref: "lv.<msn_id>.<sandbox>.<name>", role_hint: subordinate }
-public_pull:                           # no-contract resources (FND: msn_registry)
-  - { ref: "stl.<msn_id>.msn_registry", freshness: mss_version_hash }
-```
+### Sources manifests — the cross-sandbox mechanism, with a reader
 
-### contract record (host: `modules/domains/contracts`)
+`micyte/core/sources.py`. A sandbox never reads another sandbox's documents; it
+reads its own `sources` manifest, whose rows the owning sandbox published to it.
+A row is name + kind + `rf.3-1-12` content hash.
 
-```yaml
-contract_id: <stable id>
-parties:
-  - { msn_id: <self>,  public_key_ref: ... }
-  - { msn_id: <peer>,  public_key_ref: ... }
-state: proposed | accepted | active | rotating | revoked
-session:
-  symmetric_key_ref: <opaque handle into core/crypto; NEVER the raw key>
-  established_at: <hops/ts>
-  rotates_at: <hops/ts>                # "timely" symmetric key
-relationships:                         # multiple, role per-relationship
-  - relationship_id: <id>
-    manager:    <self|peer msn_id>
-    subordinate:<peer|self msn_id>
-    template_ref: "<WORKBOOK-YAML doc id>"   # Manager-published
-    base_mss_ref: "<optional base MSS doc id>"
-    contributions:                            # Subordinate-returned recompiled MSS
-      - { mss_version_hash: "sha256:…", at: <hops/ts> }
-```
+**Two hash families**, dispatched from the row's declared kind — this is a real
+trap and it is worth knowing before touching a manifest:
 
-Note the deliberate name collision avoidance: the *existing*
-`network_root` "contract" filters (`service.py:44`) are **local audit-log
-correspondence rows**, not these network contract records. The new model lives in
-a different package and must not be conflated with the read-model presenter.
+- `datum_document` rows pin the **document-id version hash** (already in the
+  canonical id; verifying costs nothing);
+- `boundary` / `taxonomy` / `profiles` / `events` rows pin the **MSS bitstream
+  hash** of the document's datum closure (must be encoded to check).
 
-### msn_registry MSS layout (host: read seam via `ports/network_root_read_model`; authored as `stl.` doc)
+These are different numbers for the same document. A resolver that assumed one
+family would report every row of the other as total drift.
 
-```yaml
-# an MSS datum document; entries are contact-card abstractions + locations
-schema: msn_registry.v1
-entries:
-  - { msn_id: <peer-a>, access: {domain|ipv4|ipv6}, card_ref: <doc id>, card_mss: "sha256:…" }
-  - { msn_id: <peer-b>, access: {…}, card_ref: <doc id>, card_mss: "sha256:…" }
-published_at: <hops/ts>
-registry_mss: "sha256:…"               # compute_mss_hash over this doc (datum_identity.py:101)
-```
+**Fault asymmetry:** a *stale* pin is a fault (mechanical fix: re-pin it). A
+*missing* or *unverifiable* source is reported, not gated — it needs a decision
+about the data, and a gate that fails forever teaches everyone to ignore it.
 
-### package ownership summary (proposed)
+---
 
-| Concern | Proposed host | Today |
-|---|---|---|
-| Key gen / agreement / symmetric encrypt / rotation | `core/crypto` | scaffold (`core/crypto/README.md:3`) |
-| Contract lifecycle + role assignment | `modules/domains/contracts` | scaffold (`.../contracts/README.md:3`) |
-| Template publish + Subordinate-fill validation + cross-portal lookup | `modules/domains/reference_exchange` | scaffold (`.../reference_exchange/README.md:3`) |
-| `msn_registry` / contact-card **read** | extend `ports/network_root_read_model` | local-only read-model (`contracts.py:44`, `:150`) |
-| Reachable-access validation (domain + IPv4 + IPv6) | extend `core/identities` | domain-only (`domains.py:14`) |
-| Sandbox runtime to host the publish/fill workflow | `sandboxes/orchestration` / `sandboxes/system` | scaffolds |
-| Shell mediation of contract events into the local log | `state_machine/mediation_surface` | scaffold |
-| MSS recompile + version hash (reused, not new) | `core/mss/datum_identity` | exists (`:101`) |
-| WORKBOOK-YAML template transport (reused, not new) | `core/datum_io/codec` | exists (`:97`) |
+## As-built: the data plane it composes
+
+- **MSS version hash + hyphae.** `micyte/core/mss/`. A document's version hash is
+  the MSS hash of its downward closure; a datum's hyphae value is the MSS hash of
+  *that datum's* closure.
+- **A datum address is a document-local coordinate.** `4-1-1` is not a name —
+  on the live instance **7,241 addresses are claimed by two or more documents**.
+  Closures resolve through `DocumentScopedIndex` (`micyte/core/mss/document_adapter.py`),
+  which puts the document's own rows in front of the tenant index. Before
+  2026-08-04, 627 of 630 documents hashed a closure they did not contain.
+- **A hyphae names its document.** `micyte/core/mss/hyphae.py` —
+  `build_hyphae(address, *, index, document, source_msn)` requires the document,
+  refuses one that does not *carry* the address, and writes the canonical
+  `document_id` into the payload. Schema `mycite.v2.mos.hyphae.v2`; v1 is refused
+  by name because it cannot say where its focus datum came from.
+  **This is the network's citation primitive** — see the cooperation convention §3.
+- **Canonical document ids** already embed the msn:
+  `lv.<msn_id>.<sandbox>.<name>.<version_hash>`
+  (`micyte/core/document_naming/__init__.py:65`, `:109`).
+- **WORKBOOK-YAML** transport form, MSS-hash-preserving on round-trip
+  (`micyte/core/datum_io/codec.py:97`, `:112`).
+
+---
+
+## Proposed — what is still unbuilt
+
+> Proposals. Nothing here is authorized by this page.
+
+### 1. `msn_registry` — discovery without a contract
+
+A contract cannot be how you learn to form a contract, so discovery must work
+unauthenticated. The proposal: FND publishes an `msn_registry` MSS artifact —
+every current contact card's reachable address and card reference — pullable with
+no contract, over the same public-stills discipline `/__mss/public/stills/` already
+uses (allowlist, 404-not-403). Versioned and integrity-checkable like any other
+MSS document.
+
+An instance contacting a peer it has never met pulls the registry, resolves the
+peer's `msn_id` → card, reads `public_signature` and `instance_endpoint`, and
+*then* handshakes.
+
+**Open:** freshness (push / poll / TTL), whether the registry is signed by FND so
+it can be trusted through an untrusted relay, and whether FND's key is pinned at
+ship time or bootstrapped. FND is the de-facto trust root of this network and that
+should be a decision, not a default.
+
+### 2. Resolving a magnet reference against a remote instance
+
+The cooperation convention specifies the *reference*
+(`hy.<msn>.<sandbox>.<document>.<version_hash>.<address>`) and what resolving it
+returns (a hyphae). The transport exists; the **resolve operation on top of it
+does not**, and it needs its own design pass covering batching, partial failure,
+and what an unreachable member renders as.
+
+### 3. Rotation cadence
+
+`key_is_expired` takes `key_period_seconds` as a parameter and the default is 30
+days (`contract_handshake.py:50`). Whether rotation should also be volume-based,
+and whether it re-handshakes or ratchets from the existing session, is undecided.
+
+### 4. What an open session may offer toward joining
+
+Joining requires a contract, a contract requires a card and a signature, so a bare
+browser cannot join. What an open channel may *offer* toward joining — and how it
+does so without acquiring a write path — is undesigned. The constraint is
+non-negotiable: no write route under `/__channel/`.
+
+---
+
+## Superseded — the Manager/Subordinate template model
+
+Earlier revisions of this page specified an exchange in which a **Manager**
+published a WORKBOOK-YAML template, a **Subordinate** filled only its empty fields
+and recompiled the MSS, and *that recompiled MSS was the contribution*; plus a
+default Subordinate relationship every instance held to FND.
+
+**That model is superseded** by the cooperation convention (2026-08-04). What
+survives and what does not:
+
+| | |
+|---|---|
+| **Survives** | The published blank/empty document as the **shape** of a relationship — convention §2a. Versioned, so "which version of the agreement" is answerable. |
+| **Survives** | Filling only declared-empty addresses, structure unchanged. Still enforceable with `preview_document_insert` (`micyte/core/datum_semantics/engine.py:545` — the earlier revision of this page cited `adapters/sql/datum_semantics.py:474`, which no longer exists). |
+| **Superseded** | The **roles**. Manager/Subordinate made every relationship hierarchical; channel membership is not. |
+| **Superseded** | Filling with **values**. The member binds **references** to datums it already holds, and the channel resolves them. Returning a filled document duplicates the member's data into a second copy that drifts on the next edit — the thing this network exists to avoid. |
+| **Superseded** | The default FND-Manager relationship. Discovery is `msn_registry` (§1 above), which needs no relationship at all. |
+
+The one-line version: **the contribution is not a filled document, it is a
+resolvable citation.**
 
 ---
 
 ## Migration path
 
-Phased so each step is independently testable and never ships half a security
-boundary. (Coarse roadmap; sequencing tracked in `99-roadmap.md`.)
+1. ~~Crypto primitives~~ — **done** (`core/crypto`, Ed25519 peripheral).
+2. ~~Contract model + lifecycle~~ — **done** (`contract_store`, `contract_negotiation`).
+3. ~~Contact card + reachable address~~ — **done** (`3-1-17`, `3-1-18`).
+4. ~~Authenticated transport + replay protection~~ — **done** (handshake, sequence store).
+5. ~~Outbound client~~ — **done** (`instance_client`).
+6. **`msn_registry`** — discovery without a contract. Next.
+7. **Magnet resolution** — the remote-read operation over the existing transport.
+8. **Accounts / aliases** — per the cooperation convention, once 6 and 7 hold.
 
-1. **Crypto primitives** — implement `core/crypto`: key generation, asymmetric
-   key agreement/auth, symmetric encrypt/decrypt, rotation-schedule helpers.
-   Extend the audit deny-list (`local_audit/service.py:18-30`) to cover any new
-   private-key field names. *No network I/O yet.*
-2. **Contract model + roles** — implement `modules/domains/contracts`: contract
-   record, state machine (`proposed→active→rotating→revoked`), per-relationship
-   Manager/Subordinate assignment. Pure domain logic over `core/crypto` handles;
-   no transport.
-3. **Contact card + default FND Subordinate contract** — define the msn contact
-   card datum-doc shape; add IPv4/IPv6 validators to `core/identities`; ship the
-   pre-established FND-Manager / self-Subordinate relationship that fills the
-   `msn_id` access field.
-4. **`msn_registry`** — author the registry as an `stl.` MSS doc; expose a
-   **no-contract public pull** read path by extending
-   `ports/network_root_read_model` (and a new transport adapter). Discovery works
-   before any contract exists.
-5. **Template-driven fill** — implement the publish/fill workflow in
-   `modules/domains/reference_exchange` + a sandbox runtime under
-   `sandboxes/orchestration`: Manager publishes WORKBOOK-YAML (`codec.py:97`),
-   Subordinate fills only empty fields (validated via
-   `datum_semantics.py:474`) and recompiles MSS (`datum_identity.py:101`).
-6. **Reference exchange (general resource sharing)** — generalize step 5 beyond
-   the FND default: arbitrary Manager↔Subordinate resource sharing under any
-   active contract, with contract events mediated into the local log via
-   `state_machine/mediation_surface`.
-
-A desktop/offline instance follows the same path but pulls `msn_registry` and
-syncs contracts opportunistically; see `95-desktop-app-local-db.md`.
-
----
-
-## Open design questions
-
-- **Asymmetric algorithm**: RSA vs ECDSA vs Ed25519/X25519 for the advertised
-  public key. Ed25519 (sign) + X25519 (agreement) is the modern default; RSA is
-  the most universally interoperable. Decide before step 1, since the contact
-  card carries the algorithm tag.
-- **Symmetric key rotation cadence**: time-based, volume-based, or both? What is
-  "timely"? Does rotation require a full re-handshake or a ratchet derived from
-  the existing session?
-- **Registry freshness / consistency**: how stale may a cached `msn_registry`
-  be? Push (FND notifies) vs pull (portals poll) vs TTL on the MSS version hash?
-  How are revoked/rotated `msn_id`s reflected (analogous to DNS negative caching)?
-- **Auth for cross-portal pulls**: `msn_registry` and contact cards are pullable
-  *without* a contract — what (if anything) rate-limits or authenticates those
-  anonymous pulls? Is the public-pull manifest itself signed by FND so a
-  Subordinate can trust a registry it fetched from an untrusted relay?
-- **Trust root**: is FND's own public key pinned/shipped with every portal, or
-  is there a bootstrap-trust step? (FND is the de-facto CA of this network.)
-- **Naming collision**: the local `network_root` read-model already uses
-  "contract" for audit-log correspondence (`service.py:44`). Keep network
-  contracts in `modules/domains/contracts` and avoid overloading the term in the
-  read-model, or rename one side, before either surfaces in UI.
+**Not built, and the honest reason:** no delivery between two *live* instances has
+ever happened. FND publishes the only signature and the only endpoint in a
+236-node registry, and it is not its own counterparty. The two-instance proof is
+`fnd_app/tests/integration/test_contract_delivery_over_tcp.py` — a real socket,
+two private directories.
 
 ---
 
 ## Acceptance
 
-This page is **design-spec** and is accepted when:
+This page is accepted when:
 
-- It states the problem (the network layer is entirely stubbed) and summarizes
-  the vision faithfully.
-- Every vision element is mapped to its **actual** current stub or partial with a
-  resolvable `path:line` citation, and the stub-vs-partial distinction matches
-  what is in the tree today.
-- The proposed model defines each element — contact card + FND profile card,
-  public-key advertisement, asymmetric handshake → timely symmetric key,
-  Manager/Subordinate multi-relationship roles, template-driven Subordinate fill
-  via WORKBOOK-YAML + MSS recompile, resource sharing, the default FND
-  Subordinate contract, and the `msn_registry` no-contract pull — and is clearly
-  labelled as a proposal.
-- Data-shape sketches name a proposed host package for each interface.
-- A phased migration path and a set of open design questions are recorded.
-- No crypto/contract code is implemented by this unit (docs-only).
+- Every **as-built** claim cites a resolvable `path:line` and is true of the tree
+  today. A claim that goes stale is a defect in this page, not a footnote.
+- The as-built / proposed / superseded split is explicit, and no reader can mistake
+  a proposal for something that exists — **or** something that exists for something
+  they must build.
+- It does not restate the account/alias model that the cooperation convention owns.
+- No crypto or contract code is implemented by editing this page.

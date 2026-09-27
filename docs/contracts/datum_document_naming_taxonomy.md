@@ -14,13 +14,17 @@ datum (`0-0-11`); they do not receive a canonical datum-document name.
 
 ## File Type Prefixes
 
-Three prefixes define the datum-document type:
+Four prefixes define the datum-document type. The first three were the taxonomy as
+written on 2026-05-05; `art` joined on 2026-08-23 and this contract said "three" until
+2026-09-16, while 192 `art.` documents sat in the live store. A contract that omits a
+live prefix is a validator that rejects a quarter of one instance's documents.
 
 | Prefix | Long form | Type | Content |
 |---|---|---|---|
 | `lv` | live | Sandbox sources | The system anchor file (`anthology.json`), every tool sandbox anchor (`anchor`), and every other in-sandbox source document. All datum files in a sandbox depend on the sandbox anchor and may reference new datum addresses for abstraction by treating the anchor's datums as branches. |
 | `stl` | stale | Binary payloads | The compiled hyphae form of a filament datum, produced by either the local portal or a foreign portal. A binary payload encodes only the minimal abstraction identity (hyphae value) of a single filament datum. |
 | `cptr` | capture | Cached sources | The decompiled JSON form of a binary payload. A capture contains every datum abstraction needed to materialize the corresponding filament datum's hyphae value, but it is not itself a sandbox source — it is a cache of the payload's decompiled form. |
+| `art` | artifact | Byte sequences | A file whose interior MiCyte does not read — a photograph, a PDF, a logo. Its rows ARE its bytes (`micyte/core/datum_ops/artifact.py`: a header declaring one binary value and its size, then the bytes in chunks each carrying its width). No sandbox segment: an artifact belongs to an instance, and the lcl node that DENOTES it is what ties it to a sandbox. Never enters the catalog snapshot (`NonCatalogPrefixError`). |
 
 ## Canonical Name Format
 
@@ -28,19 +32,22 @@ Three prefixes define the datum-document type:
 lv.<msn_id>.<sandbox>.<name>.<version_hash>
 stl.<msn_id>.<name>.<version_hash>
 cptr.<msn_id>.<name>.<version_hash>
+art.<msn_id>.<name>.<version_hash>
 ```
 
 Fields:
 
 - `msn_id` — Portal/owning instance identifier. Example: `1-2-3-4-5-6-7-8-9-0` for the FND portal.
 - `sandbox` — Canonical sandbox token. Required for `lv.` documents only. **Uses underscores** (programmatic form). Examples: `system`, `cts_gis`, `fnd_ebi`, `agro_erp`. URL route slugs (`/tools/cts-gis`) are a separate display concern and must not appear in canonical document IDs.
-- `name` — Document name. For `lv.` documents the name is `anchor` for every sandbox anchor *except* the system sandbox, where the anchor is named `anthology`. Non-anchor `lv.` documents and all `stl.`/`cptr.` documents use the document's own name (e.g. `247_17_77_1`, `registrar`, `txa`, `natural_entity`).
+- `name` — Document name. For `lv.` documents the name is `anchor` for every sandbox anchor *except* the system sandbox, where the anchor is named `anthology`. Non-anchor `lv.` documents and all `stl.`/`cptr.`/`art.` documents use the document's own name (e.g. `247_17_77_1`, `registrar`, `txa`, `natural_entity`).
 - `version_hash` — 64-character lowercase hex SHA-256 over the MSS form of the document (policy `mos.mss_sha256_v1`).
 
-`stl.` and `cptr.` documents do not carry a sandbox segment. A binary payload or its
-capture is owned by a portal (`msn_id`) but is not constrained to one of that
+`stl.`, `cptr.` and `art.` documents do not carry a sandbox segment. A binary payload or
+its capture is owned by a portal (`msn_id`) but is not constrained to one of that
 portal's sandboxes — payloads circulate across sandboxes and across portals through
-contracts.
+contracts. An artifact is owned by a portal for the same reason and is placed in a
+sandbox only by denotation: the lcl `artifact` branch names it (`local_domain.Entry.
+artifact`), so "this sandbox's artifacts" is a question the TREE answers, never the id.
 
 ## URL Slug vs Sandbox Token
 
@@ -123,8 +130,8 @@ The `version_hash` is the SHA-256 of the MSS (Monotonic Structured Serialization
 of the document under policy `mos.mss_sha256_v1`:
 
 `mss.` is a design-time shorthand for the serialization/hash policy only; it is
-not a fourth document prefix. Stored document IDs are limited to the three
-canonical prefixes: `lv.`, `stl.`, and `cptr.`.
+not a document prefix. Stored document IDs are limited to the four canonical
+prefixes `ALLOWED_PREFIXES` names: `lv.`, `stl.`, `cptr.` and `art.`.
 
 - The MSS form is the *indiscriminate* inclusion of the complete datum file: every
   row, ordered canonically by `(layer, value_group, iteration)`, with every reference
@@ -147,7 +154,7 @@ Document IDs must match:
 ```
 ^lv\.[^.]+\.[^.]+\.[^.]+\.[a-f0-9]{64}$
 |
-^(stl|cptr)\.[^.]+\.[^.]+\.[a-f0-9]{64}$
+^(stl|cptr|art)\.[^.]+\.[^.]+\.[a-f0-9]{64}$
 ```
 
 Validation is enforced at the SQL adapter boundary
@@ -158,14 +165,21 @@ rejected.
 ## SQL Realization
 
 A single relational table — `documents` — backs this taxonomy. The prefix is
-discriminated by a `CHECK (prefix IN ('lv','stl','cptr'))` constraint; `sandbox` is
-nullable so that `stl.` and `cptr.` rows can omit it. Refer to
+discriminated by a `CHECK (prefix IN ('lv','stl','cptr','art'))` constraint; `sandbox`
+is nullable so that `stl.`, `cptr.` and `art.` rows can omit it. Refer to
 `mos_database_schema_addendum.md` for the schema.
+
+The CHECK is why adding a prefix to `ALLOWED_PREFIXES` is not enough on its own: an
+existing store refuses the new row with `IntegrityError: CHECK constraint failed`, and
+SQLite cannot `ALTER` a CHECK, so the table has to be rebuilt —
+`fnd_app/scripts/migrate_documents_prefix_check.py` (dry-run by default, `VACUUM INTO`
+backup first). `fnd_app/tests/unit/test_datum_naming_contract_is_pinned_to_the_code.py`
+holds this document, the schema addendum and `mos_schema.py` to one CHECK clause.
 
 The taxonomy explicitly **does not** decompose into separate tables for SAMRAS
 namespaces, HOPS geometry chains, hyphae chains, or staging-promotion maps. Those
 concerns belong to the core libraries (`micyte/core/samras`, `micyte/core/hops`,
-`micyte/core/datum_editing`, `micyte/core/mss`) and the per-row
+`micyte/core/mss`) and the per-row
 `hyphae_chain_json` column on `datum_row_semantics`, not to additional relational
 schemas.
 
@@ -197,7 +211,7 @@ document naming, sandbox token resolution, or workbench rendering decisions.
 
 ## Migration Status
 
-The migration to canonical `lv./stl./cptr.` IDs is realized through the
+The migration to canonical `lv./stl./cptr.` IDs (and later `art.`) is realized through the
 `documents` table introduced in 2026-05-05; legacy compatibility keys
 (`system:anthology`, `sandbox:<tool>:<filename>.json`) are retained as
 `documents.legacy_alias` for one cycle. New writes must produce canonical IDs;

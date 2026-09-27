@@ -63,10 +63,10 @@ implement (or scaffold) them. All paths below exist on disk.
  │   micyte/state_machine/lens/registry.py   (lens ↔ family / value_kind)               │
  │   fnd_app/instances/_shared/portal_host/static/v2_portal_tool_palette.js  (menu-bar) │
  ├──────────────────────────────────────────────────────────────────────────────────────┤
- │ ⌛ FUTURE NETWORK (stubbed — 1-LOC inert scaffolds today)                             │
- │   micyte/core/crypto/                     (asymmetric/symmetric key material)        │
- │   micyte/domains/contracts/               (Manager/Subordinate contracts)            │
- │   micyte/domains/reference_exchange/      (resource sharing)                         │
+ │ ◑ NETWORK (transport LIVE 2026-08-02; discovery + remote reads still missing)        │
+ │   micyte/core/crypto/                     signature.py + channel.py — BUILT          │
+ │   micyte/domains/contracts/               channel.py ChannelState — BUILT            │
+ │   micyte/domains/reference_exchange/      message.py — partial                       │
  │   fnd_app/packages/sandboxes/orchestration/, .../system/                             │
  │   micyte/state_machine/mediation_surface/                                            │
  │   micyte/tools/_shared/                                                              │
@@ -107,7 +107,11 @@ references are expected).
 - [`10-l1-core-engine.md`](10-l1-core-engine.md) — L1 CORE: the MOS datum-database library.
 - [`20-l2-surface-persistence.md`](20-l2-surface-persistence.md) — L2 SURFACE: datum-document persistence in MSS form.
 - [`30-l3-shell-runtime-ui.md`](30-l3-shell-runtime-ui.md) — L3 UI: shell, runtime, workbook materialization.
-- [`40-tools-and-lenses-asbuilt.md`](40-tools-and-lenses-asbuilt.md) — tools & lenses as they bind today.
+- [`40-tools-and-lenses-asbuilt.md`](40-tools-and-lenses-asbuilt.md) — tools & lenses as they bind today. **`stale`**: read it for the tool CONTRACT, not the census.
+- [`41-archetypes-and-viewscopes.md`](41-archetypes-and-viewscopes.md) — a document's KIND and its LAYOUT, both held as data. The shape selects the render.
+- [`42-glyph-library.md`](42-glyph-library.md) — a drawing IS its rows: the restricted-grammar glyph codec.
+- [`43-local-domain-log.md`](43-local-domain-log.md) — the lcl log, where a node DENOTES a document. The address is the arity.
+- [`44-project-documents.md`](44-project-documents.md) — a project as a document: four rows, an expected view, extras for what a site abstracts from the base.
 - [`50-delta-map.md`](50-delta-map.md) — gap map: target architecture vs. as-built (inversion, split, stubs).
 
 **Design specs (the model the code is converging on)**
@@ -121,7 +125,10 @@ references are expected).
 - [`82-demo-sandbox-cookbook.md`](82-demo-sandbox-cookbook.md) — building a demo sandbox end-to-end.
 
 **Future / roadmap**
-- [`90-network-contract-architecture.md`](90-network-contract-architecture.md) — network, keys, Manager/Subordinate contracts, registry.
+- [`90-network-contract-architecture.md`](90-network-contract-architecture.md) — network, keys, contracts, registry. **Part as-built since 2026-08-02**, not all future.
+- [`91-channels.md`](91-channels.md) — the component the OUTSIDE world engages, and why it cannot write.
+- [`92-ports-as-four-layers.md`](92-ports-as-four-layers.md) — TYPE, EXTENSION, BINDING, GRANT — and why the last two are separate writes.
+- [`93-the-marketplace.md`](93-the-marketplace.md) — what a package is, why installing grants nothing, and how micyte.com shows the catalogue without holding a second copy of it.
 - [`95-desktop-app-local-db.md`](95-desktop-app-local-db.md) — desktop app with a local DB.
 - [`99-roadmap.md`](99-roadmap.md) — sequencing and milestones.
 
@@ -154,12 +161,12 @@ overlap, the contract is canonical — this glossary is orientation.
 - **rudi datum** — a primitive base datum at `layer=0, value_group=0`
   (`0-0-*`). Rudis are the alphabet that complex datums abstract; the hyphae chain
   is expressed entirely in rudi addresses. See the `(0, 0)` test in
-  `micyte/core/mss/datum_identity.py:163` (`rudi_in_doc`).
+  `micyte/core/mss/datum_identity.py:92` (`rudi_in_doc`).
 
 - **hyphae value** — the full transitive dependency closure of a datum, expressed
   as its rudi chain. `derive_hyphae_chain` returns `[0-0-1, ..., 0-0-K]`, where K
   is the highest rudi iteration reachable in the closure, including every position
-  in between — `micyte/core/mss/datum_identity.py:126`. This is the
+  in between — `micyte/core/mss/datum_identity.py:55`. This is the
   identity a tool can bind against.
 
 - **MSS form** (Mycelial Single-Sequence) — the canonical single-sequence encoding
@@ -174,7 +181,7 @@ overlap, the contract is canonical — this glossary is orientation.
   datum and its dependencies. Spec'd in
   [`61-mss-and-hyphae-form-spec.md`](61-mss-and-hyphae-form-spec.md); the hyphae
   chain it relies on is `derive_hyphae_chain`
-  (`micyte/core/mss/datum_identity.py:126`).
+  (`micyte/core/mss/datum_identity.py:55`).
 
 - **SAMRAS** — the pure structural model for breadth-first child-count magnitude
   trees: canonical encode/decode, address derivation, round-trip validation, and
@@ -244,23 +251,34 @@ overlap, the contract is canonical — this glossary is orientation.
   `micyte/core/document_naming/__init__.py:82`. It is the stable handle
   in the `<prefix>.<msn_id>.…` naming scheme.
 
-- **contact card** — (future) the public card a portal advertises, declaring what
-  is requestable plus the portal's public key. The supporting network read-model
-  query normalizer exists at
-  `micyte/core/network_root_surface_query.py`; the contract surface is
-  the stubbed `micyte/domains/contracts/` package
-  (currently a 1-LOC inert scaffold). See
+- **contact card** — **live.** The public card an instance advertises. It carries
+  `public_signature` (registrar `3-1-17`) and `instance_endpoint` (`3-1-18`) —
+  `micyte/core/datum_ops/field_registry.py:105`, `:114`. **Identity is read from
+  the card, never from the contract**: a contract carrying the key that authorises
+  it authorises itself. See
   [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
 
-- **contract (Manager / Subordinate)** — (future) an asymmetric-key agreement with
-  a time-bounded symmetric key. The **Manager** defines the YAML template files and
-  the base MSS document; the **Subordinate** fills the empty datum fields and
-  recompiles the MSS. Contracts enable resource sharing, and every portal defaults
-  to a Subordinate contract with the FND portal. Scaffolded at
-  `micyte/domains/contracts/`,
-  `micyte/domains/reference_exchange/`, and
-  `micyte/core/crypto/` (all inert today). See
+- **contract** — **live.** A relationship between two instances, bootstrapped by a
+  signed X25519 exchange (the responder mints the symmetric key and seals it to the
+  ECDH) and then run on that key, recycled per epoch + `key_period_seconds`.
+  Lifecycle in `micyte/domains/contracts/channel.py` (`ChannelState`) and
+  `fnd_app/instances/_shared/runtime/contract_{store,negotiation,handshake,sequence_store}.py`.
+  Contracts declare shared resources as `rc.<owner_msn>.<resource>`
+  (`micyte/core/references.py`). See
   [`90-network-contract-architecture.md`](90-network-contract-architecture.md).
+
+- **Manager / Subordinate** — **superseded (2026-08-04), never built.** An earlier
+  model in which a Manager published a YAML template and a Subordinate filled its
+  empty fields and returned a recompiled MSS. Returning a filled document duplicates
+  the member's data into a second copy that drifts; the member now binds
+  **references** and the channel resolves them. See
+  the Network Cooperation Convention (2026-08-04, internal design note).
+
+- **alias / magnet reference** — the member's half of a channel account: a document
+  of references, not values, addressed as
+  `hy.<msn>.<sandbox>.<document>.<version_hash>.<datum_address>`. A magnet reference
+  is a hyphae's header; a hyphae is what resolving it returns. Specified in the
+  cooperation convention; the resolve operation is not yet built.
 
 - **msn_registry** — (future) the DNS-like MSS file the FND portal publishes so
   portals can discover one another's contact cards. Not yet implemented; specified

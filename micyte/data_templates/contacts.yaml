@@ -1,0 +1,48 @@
+template_id: contacts
+schema: mycite.v2.datum.standard.contacts.v1
+sandbox: "*"
+archetype: standard_contact_row
+description: >
+  A roster of people or organizations. Each repeating row in layer 4 /
+  value-group 5 is one contact. The `4-5` family is the one `record_spec.py`
+  already allocates to contacts across the agro sandbox, so a row written here
+  is read by the same code that reads every other contacts document — a new
+  family number would have produced a document that only this template
+  understands.
+
+  Every magnitude rides the namespace `title` marker (`rf.3-1-2` in a farm
+  anchor). That is what makes the row readable without a bespoke viewer: the
+  marker says "a nominal value", and the tail carries the field's name.
+
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.standard.contacts.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "{{sandbox}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+repeating_archetype:
+  layer: 4
+  value_group_reference_design:
+    name:
+      magnitude_kind: trimmed_string
+      required: true
+    email:
+      magnitude_kind: trimmed_string
+      required: false
+    phone:
+      magnitude_kind: trimmed_string
+      required: false
+    role:
+      magnitude_kind: trimmed_string
+      required: false
+    note:
+      magnitude_kind: trimmed_string
+      required: false

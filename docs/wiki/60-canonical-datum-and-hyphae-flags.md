@@ -8,8 +8,8 @@
 > canonical hyphae value as a *minimum-complete, address-independent* fold that
 > **excludes** the unreferenced rudi prefix, and proposed "retiring the
 > rudi-range fill." **That is wrong.** Per the authoritative MOS spec
-> (`docs/personal_notes/MOS/mycelial_ontological_schema.md` and
-> `docs/contracts/mss_binary_sequence/`), the canonical hyphae value **must
+> ([`docs/contracts/mss_binary_sequence/`](../contracts/mss_binary_sequence/)),
+> the canonical hyphae value **must
 > include all preceding rudi datums even if not used directly** (e.g. an
 > abstraction using `0-0-5` includes `0-0-1`..`0-0-5`). The rudis are the
 > ordinal/incremental/nominal frames; the value is canonical *because* it is
@@ -18,6 +18,15 @@
 > sense earlier claimed. `compile_hyphae_value` now carries the rudi context.
 > Read the "minimum-but-complete / address-independent" passages below in that
 > light.
+>
+> _(This correction also cited `personal_notes/MOS/mycelial_ontological_schema.md`
+> until 2026-08-23. That path was deleted 2026-07-17 (`d30c6e55`) in the public/private
+> docs split and the note is private, so the citation is dropped rather than left
+> unfollowable: a page that overrules a draft on the strength of a source the reader
+> cannot open is asking to be taken on trust. The binary spec above carries the same rule
+> and can be checked — as can `compile_hyphae_value` in
+> [`micyte/core/datum_semantics/engine.py`](../../micyte/core/datum_semantics/engine.py),
+> which states it in the code.)_
 
 This page specifies how a **canonical datum** earns a stable, content-derived
 identity (a **hyphae value**), how that value "raises a flag," and how that flag
@@ -36,7 +45,7 @@ copied, re-nested, renamed, or re-addressed, because a `layer-vg-iteration`
 address is positional and changes under ordinary edits (insert/move shift every
 sibling's iteration — see `preview_document_insert` /
 `preview_document_move` in
-`micyte/adapters/sql/datum_semantics.py:474` and `:587`).
+`micyte/core/datum_semantics/engine.py:577` and `:587`).
 
 Today binding is keyed on two coarse, *non-canonical* signals:
 
@@ -86,7 +95,7 @@ Cited facts, each read from the file before citing.
 ### 1. The core hyphae chain is fully inclusive — no minimum-but-complete path
 
 `derive_hyphae_chain` in
-`micyte/core/mss/datum_identity.py:126` returns **every** rudi address
+`micyte/core/mss/datum_identity.py:55` returns **every** rudi address
 `0-0-1 .. 0-0-K`, where `K` is the highest rudi iteration reachable in the
 transitive dependency closure of the target address. The docstring is explicit:
 *"Every position 1..K is included even if not directly referenced by
@@ -108,10 +117,15 @@ canonical payload of **all** sorted rows plus `source_kind` and
 identity, not a *single datum's* canonical identity, and it has no notion of an
 abstraction path.
 
-### 3. The richer per-row semantic + hyphae engine exists — but in the SQL adapter
+### 3. The richer per-row semantic + hyphae engine exists — in core since the relocation
 
-`micyte/adapters/sql/datum_semantics.py` is the engine that actually
-computes content-derived identities:
+> Written when the engine sat in the SQL adapter. It now lives at
+> `micyte/core/datum_semantics/engine.py`; the `adapters/sql/datum_semantics` path
+> survived as a re-export shim until 2026-09-10 and is gone. Line numbers below are the
+> adapter-era ones.
+
+`micyte/core/datum_semantics/engine.py` (then `micyte/adapters/sql/datum_semantics.py`)
+is the engine that actually computes content-derived identities:
 
 - `build_document_version_identity` (`datum_semantics.py:136`) produces the same
   whole-document `version_hash` as `compute_mss_hash` (the core function's
@@ -132,12 +146,12 @@ it is still **inclusive, not minimum-but-complete**.
 
 ### 4. There is a core → adapter import inversion
 
-`micyte/core/datum_ops/ops.py:24` and
-`micyte/core/datum_ops/node_ops.py:17` both import
+`micyte/core/datum_ops/ops.py` and `micyte/core/datum_ops/node_ops.py` once imported
 (`parse_datum_address`, `preview_document_*`) **from**
-`micyte.adapters.sql.datum_semantics`. A core package depending on a
-SQL adapter is an inversion of the dependency direction. A separate wiki unit
-covers relocating this engine to `core/datum_semantics/`; this page assumes that
+`micyte.adapters.sql.datum_semantics` — a core package depending on a SQL adapter, an
+inversion of the dependency direction. The engine was relocated to
+`core/datum_semantics/` and, as of 2026-09-10, nothing imports the adapter path (the shim
+is removed; `test_core_datum_ops_boundaries` pins the direction). This page assumed that
 relocation as a prerequisite (see Migration path) and forward-refs
 `05-engineering-standards.md`.
 
@@ -148,10 +162,11 @@ relocation as a prerequisite (see Migration path) and forward-refs
 `applies_to_archetype` / `applies_to_source_kind`
 (`tool_eligibility.py:104`–`110`), widened via `derive_hyphae_chain`
 (`tool_eligibility.py:92`). `PortalToolRegistryEntry`
-(`micyte/state_machine/portal_shell/shell.py:477`) carries
-`applies_to_archetype`, `applies_to_source_kind`, and a reserved-but-unconsumed
-`manipulates_datum_kinds` (`shell.py:490`–`499`) — but **no hyphae-value field**.
-There is no registry keyed on a hyphae VALUE.
+(`micyte/state_machine/portal_shell/shell.py`) carries
+`applies_to_archetype` and `applies_to_source_kind` — but **no hyphae-value field**.
+There is no registry keyed on a hyphae VALUE. (It also used to carry a
+reserved-but-unconsumed `manipulates_datum_kinds`; the Phase 3 tool taxonomy
+removed it.)
 
 ### 6. Lens binding resolves by family / value-kind / overlay strings
 

@@ -1,7 +1,7 @@
 """Network Map — the agronomics NETWORK tab: resources published by mycelium_network.
 
 This is the CONSUMER side of the mycelium_network source-binary pipeline. mycelium_network
-*produces* a ``network_sources`` manifest (see ``scripts/produce_mycelium_network_sources.py``)
+*produces* a ``network_sources`` manifest (see ``fnd_app/scripts/produce_mycelium_network_sources.py``)
 — the index of resources it contributes to the network, each bound to its produced MSS
 source-binary identity (``rf.3-1-12``) and a resource kind (``rf.3-1-14``). This tool reads
 that manifest cross-sandbox (via the shared tenant catalog) and assembles the NETWORK map v1
@@ -30,12 +30,26 @@ manifest produced before the kind marker existed).
 from __future__ import annotations
 
 import json
+import threading
+import weakref
+from collections import OrderedDict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from micyte.core.datum_ops import field_registry as _fr
+from micyte.core.datum_ops import local_domain as _ld
+from micyte.core.datum_ops.event_vocabulary import (
+    KIND_OFF_SEASON,
+    LEGACY,
+    STRUCTURE_HC,
+    STRUCTURE_QC,
+    EventVocabulary,
+    ordinal,
+)
 from micyte.core.document_naming import parse_canonical_document_id
+from micyte.core.instance_baseline import LOCAL_DOMAIN_NAMES
+from micyte.core.sources import resolve_sources
 from micyte.core.structures.hops import (
     current_open_window,
     cycle_start_year_of,
@@ -44,11 +58,11 @@ from micyte.core.structures.hops import (
     next_hc_occurrences,
     parse_ic_stamp,
 )
-from micyte.core.structures.hops.cyclical import LCL_HC, LCL_QC
 from micyte.state_machine.portal_shell.shell_schemas import WORKBENCH_UI_TOOL_ROUTE
 
 from ._archetype import read_sandbox_catalog
 from ._registry import register
+from ._requirements import REGISTRAR
 from ._shared.utilities import as_text as _as_text
 from ._shared.utilities import row_head as _row_head
 
@@ -63,9 +77,13 @@ _UTC_M = _fr.marker(_fr.REGISTRAR, "utc")              # rf.3-1-6
 _SB = _fr.marker(_fr.REGISTRAR, "mss_source_binary")   # rf.3-1-12
 _LCL = _fr.marker(_fr.REGISTRAR, "lcl_id")             # rf.3-1-13
 _KIND = _fr.marker(_fr.REGISTRAR, "resource_kind")     # rf.3-1-14
+_JURISDICTION = _fr.marker(_fr.REGISTRAR, "jurisdiction_type")   # rf.3-1-10
+_REGION_REF = _fr.marker(_fr.REGISTRAR, "region_polygon_ref")    # rf.3-1-11
 _STAMP = _fr.marker(_fr.REGISTRAR, "ic_stamp")         # rf.3-1-15 (ic-hops cyclical stamp)
 _SPAN = _fr.marker(_fr.REGISTRAR, "tiu_magnitude")     # rf.3-1-16 (tiu span magnitude)
-_KIND_OPEN_HOURS, _KIND_OFF_SEASON = "1-3-8-1", "1-3-8-2"
+# Event kinds, structures, units, classes and ag categories are named by LEAF ORDINAL —
+# the local domain's 2026-09-09 re-rooting kept the numbering and changed every prefix.
+# See micyte/core/datum_ops/event_vocabulary.py.
 
 # Entity-class colour palette (the FND brand mark). The operator's rule: a marker's
 # COLOUR encodes WHO hosts / supports / drives that location — its ENTITY CLASS — while
@@ -96,20 +114,16 @@ _SUBSTANCE_BY_CATEGORY = {
     "organization": "building", "administrative": "landmark",
 }
 # producer subtype (lcl 1-2-1-N) → a more specific substance glyph.
-_PRODUCER_SUBTYPE_ICON = {
-    "1-2-1-2": "orchard", "1-2-1-4": "farm_stand", "1-2-1-5": "apiary", "1-2-1-6": "vineyard",
-}
-# event class → substance glyph (the venue the recurrence markets).
-EVENT_CLASS_ICON = {"1-3-1": "farmers_market", "1-3-2": "csa", "1-3-3": "farm_stand",
-                    "1-3-4": "grocery", "1-3-5": "basket", "1-3-6": "ticket"}
-# event class → the events-list toggle group (the card viewer's type filter).
-EVENT_CLASS_GROUP = {"1-3-1": "market", "1-3-2": "csa", "1-3-3": "stand", "1-3-4": "store"}
-# lcl ag_profile branch → ag category (longest prefix wins). 1-2-2 = farmers market,
-# 1-2-4 = market (a grocery / "food hub" is just a market — no separate category).
-_CATEGORY_BY_LCL = (
-    ("1-2-1", "producer"), ("1-2-2", "farmers_market"), ("1-2-3", "csa"), ("1-2-4", "market"),
-    ("1-2-5", "seed_supplier"), ("1-2-6", "organization"), ("1-2-7", "administrative"),
-)
+# producer subtype (the producer's N-th child) → a more specific substance glyph.
+_PRODUCER_SUBTYPE_ICON = {2: "orchard", 4: "farm_stand", 5: "apiary", 6: "vineyard"}
+# event class ordinal → substance glyph (the venue the recurrence markets).
+EVENT_CLASS_ICON = {1: "farmers_market", 2: "csa", 3: "farm_stand", 4: "grocery", 5: "basket", 6: "ticket"}
+# event class ordinal → the events-list toggle group (the card viewer's type filter).
+EVENT_CLASS_GROUP = {1: "market", 2: "csa", 3: "stand", 4: "store"}
+# ag_profile child ordinal → ag category. 2 = farmers market host, 4 = market (a grocery /
+# "food hub" is just a market — no separate category).
+_CATEGORY_BY_ORDINAL = {1: "producer", 2: "farmers_market", 3: "csa", 4: "market",
+                        5: "seed_supplier", 6: "organization", 7: "administrative"}
 
 # NETWORK sub-tab sectioning (operator taxonomy). Every entity profile falls in exactly
 # ONE section so the NETWORK tab's Operation / Peer / Logistic sub-tabs partition the
@@ -158,11 +172,9 @@ def _owner_slug(label: str) -> str:
     return _as_text(label).split(".", 1)[0]
 
 
-def _substance_for_profile(lcl_node: str) -> str:
-    for pref, gid in _PRODUCER_SUBTYPE_ICON.items():
-        if lcl_node == pref or lcl_node.startswith(pref + "-"):
-            return gid
-    return _SUBSTANCE_BY_CATEGORY.get(_category_for(lcl_node), "building")
+def _substance_for_profile(lcl_node: str, vocabulary: EventVocabulary = LEGACY) -> str:
+    return (_producer_subtype_icon(lcl_node, vocabulary)
+            or _SUBSTANCE_BY_CATEGORY.get(_category_for(lcl_node, vocabulary), "building"))
 
 
 def _doc_name(doc: Any) -> str:
@@ -202,21 +214,6 @@ def _row_label(r: Any) -> str:
     return ""
 
 
-def _manifest_resources(manifest: Any) -> list[dict[str, str]]:
-    """Parse the network_sources manifest rows into resource descriptors."""
-    out: list[dict[str, str]] = []
-    for r in getattr(manifest, "rows", ()) or ():
-        pairs = _pairs(_row_head(r))
-        name = pairs.get(_NAME, [""])[0]
-        node = pairs.get(_NODE, [""])[0]
-        if not name or not node:
-            continue  # skip the manifest's own identity row (no geo node)
-        out.append({"name": name, "node": node,
-                    "source_binary": pairs.get(_SB, [""])[0],
-                    "kind": pairs.get(_KIND, ["boundary"])[0] or "boundary"})
-    return out
-
-
 def _outer_rings(reference_geojson: Any) -> list[list]:
     """Every polygon outer ring ([lon,lat] lists) in a reference_geojson (FC / Feature /
     Polygon / MultiPolygon). MultiPolygons are flattened to one ring per polygon so each maps
@@ -251,6 +248,94 @@ def _outer_rings(reference_geojson: Any) -> list[list]:
     return rings
 
 
+def _ring_rows(document: Any) -> list[list]:
+    """Every ring in a boundary node-document, decoded from its ``4-K-N`` ring rows.
+
+    The rows are the authority; ``document_metadata.reference_geojson`` is a derived cache and
+    is not always built. akron_city holds 23 ring rows and 4,501 vertices with no cache, so a
+    reader that only consulted the cache left the largest city in the service area as a hole in
+    the map. Reading the rows first means a boundary is drawable as soon as it is stored.
+    """
+    rings: list[list] = []
+    for row in getattr(document, "rows", ()) or ():
+        if not _as_text(getattr(row, "datum_address", "")).startswith("4-"):
+            continue
+        ring: list[list[float]] = []
+        for token in _pairs(_row_head(row)).get(_COORD) or []:
+            point = _lonlat(token)
+            if point:
+                ring.append([point[0], point[1]])
+        if len(ring) >= 3:
+            rings.append(ring)
+    return rings
+
+
+#: Decoded rings memoized PER DOCUMENT OBJECT: ``id(document) -> (weakref, rings)``.
+#:
+#: Worth having because one agronomics panel build reads the same boundary documents for three
+#: NETWORK sub-tabs. At 466 boundary documents a naive reader did 2,796 ring decodes and 427,584
+#: HOPS coordinate tokens per request — ~17 s, against a 15 s client timeout. Decoding each
+#: document once takes it to ~3 s.
+#:
+#: Keyed on the OBJECT and not on ``document_id``, because a document id is not a content
+#: identity on the write path that matters here: ``replace_authoritative_document`` REQUIRES
+#: ``updated_document.document_id == document_id``, and that is the path the portal Datum
+#: Workbench's row editor takes. An edited boundary therefore keeps its id, and an id-keyed
+#: cache would serve the pre-edit outline for the life of the worker. A replaced document is
+#: always a NEW object — the write drops the catalog cache and the next read rebuilds it — so
+#: object identity is the honest key.
+#:
+#: The weakref is what makes ``id()`` safe, and is also the eviction policy: its callback drops
+#: the entry as the document is collected (before CPython can recycle the address), so an id can
+#: never be reused onto a live entry and the cache cannot outgrow the documents it describes.
+#: Nothing is pinned: the entry holds no strong reference to the document.
+_RINGS_BY_DOCUMENT: dict[int, tuple[Any, list[list]]] = {}
+
+
+def _boundary_rings(document: Any) -> list[list]:
+    key = id(document)
+    entry = _RINGS_BY_DOCUMENT.get(key)
+    if entry is not None and entry[0]() is document:
+        return entry[1]
+    rings = _ring_rows(document) or _outer_rings(
+        (getattr(document, "document_metadata", {}) or {}).get("reference_geojson"))
+
+    def evict(reference: Any) -> None:
+        held = _RINGS_BY_DOCUMENT.get(key)
+        if held is not None and held[0] is reference:
+            _RINGS_BY_DOCUMENT.pop(key, None)
+
+    try:
+        _RINGS_BY_DOCUMENT[key] = (weakref.ref(document, evict), rings)
+    except TypeError:
+        pass  # not weak-referenceable: correctness over the memo
+    return rings
+
+
+#: Region layers, outermost first. `county` is the regional frame; `community` is the
+#: municipal layer — cities, townships and villages, which OVERLAP each other by design because
+#: an Ohio village is carved out of the township that still surrounds it.
+REGION_LEVELS = ("county", "community")
+_LEVEL_LABEL = {"county": "Counties", "community": "Municipalities"}
+
+
+def _region_layers(features: list[dict[str, Any]], node_label: dict[str, str]) -> list[dict[str, Any]]:
+    """One entry per drawable region layer: what it holds and which counties it covers."""
+    out: list[dict[str, Any]] = []
+    for level in REGION_LEVELS:
+        nodes = {f["properties"]["node"] for f in features
+                 if f["properties"].get("kind") == "parcel"
+                 and f["properties"].get("level") == level}
+        covers = sorted({"-".join(n.split("-")[:5]) for n in nodes})
+        out.append({
+            "level": level,
+            "label": _LEVEL_LABEL.get(level, level),
+            "count": len(nodes),
+            "covers": [{"node": n, "label": node_label.get(n, n)} for n in covers],
+        })
+    return out
+
+
 def _error(message: str) -> dict[str, Any]:
     return {"schema": _SCHEMA, "tool_id": "network_map", "error": message,
             "feature_collection": {"type": "FeatureCollection", "features": []},
@@ -268,11 +353,18 @@ def _lonlat(coord_token: str) -> tuple[float, float] | None:
     return float(lon), float(lat)
 
 
-def _category_for(lcl_node: str) -> str:
-    for prefix, key in _CATEGORY_BY_LCL:
-        if lcl_node == prefix or lcl_node.startswith(prefix + "-"):
-            return key
-    return "organization"
+def _category_for(lcl_node: str, vocabulary: EventVocabulary = LEGACY) -> str:
+    """The ag category of a profile's lcl reference: the ordinal of the ag_profile child it
+    sits under (``1-3-1-2-1-4`` and ``1-2-1-4`` are both producer/farmstand)."""
+    below = vocabulary.below("category", lcl_node)
+    return _CATEGORY_BY_ORDINAL.get(below[0] if below else 0, "organization")
+
+
+def _producer_subtype_icon(lcl_node: str, vocabulary: EventVocabulary = LEGACY) -> str:
+    """The producer subtype's glyph, or ``""``: the second ordinal under the ag_profile root
+    when the first is the producer (1)."""
+    below = vocabulary.below("category", lcl_node)
+    return _PRODUCER_SUBTYPE_ICON.get(below[1], "") if below[:1] == (1,) and len(below) >= 2 else ""
 
 
 def _time_range_text(hour: int, minute: int, span_minutes: int) -> str:
@@ -283,10 +375,10 @@ def _time_range_text(hour: int, minute: int, span_minutes: int) -> str:
 
 
 # per-chronology event-log docs (system_log family): doc name → its structure lcl leaf.
-_LOG_DOC_STRUCTURE = {"qc_log": LCL_QC, "hc_log": LCL_HC, "lc_log": "1-5-4"}
+_LOG_DOC_STRUCTURE_ORDINAL = {"qc_log": STRUCTURE_QC, "hc_log": STRUCTURE_HC, "lc_log": 4}
 
 
-def iter_event_log_entries(doc: Any) -> list[dict[str, Any]]:
+def iter_event_log_entries(doc: Any, vocabulary: EventVocabulary = LEGACY) -> list[dict[str, Any]]:
     """Parsed event entries of one event-log document, tolerant of both shapes:
 
     * ``7-3-N`` entries (the per-chronology ``qc_log``/``hc_log``/``lc_log`` docs,
@@ -299,16 +391,20 @@ def iter_event_log_entries(doc: Any) -> list[dict[str, Any]]:
     copied out of their doc), falling back to the owning doc's structure by name.
     ``event_class`` may be empty on closure entries. Reused by the micyte.com offering
     exporter — keep it dependency-light and pure.
+
+    ``vocabulary`` says where kinds, structures and units live in the tree the log belongs
+    to (``EventVocabulary.from_log``); the default is the pre-2026-09-09 shape.
     """
     type_lcl: dict[str, str] = {}
     for r in getattr(doc, "rows", ()) or ():
         addr = _as_text(getattr(r, "datum_address", ""))
         if addr.startswith("4-2-"):
             pairs = _pairs(_row_head(r))
-            lcl = next((c for c in pairs.get(_LCL, []) if c.startswith("1-3-")), "")
+            lcl = next((c for c in pairs.get(_LCL, []) if vocabulary.is_("class", c)), "")
             if lcl:
                 type_lcl[addr.rsplit("-", 1)[-1]] = lcl
-    doc_structure = _LOG_DOC_STRUCTURE.get(_doc_name(doc), "")
+    doc_structure_ordinal = _LOG_DOC_STRUCTURE_ORDINAL.get(_doc_name(doc), 0)
+    doc_structure = vocabulary.node("structure", doc_structure_ordinal) if doc_structure_ordinal else ""
     entries: list[dict[str, Any]] = []
     for r in getattr(doc, "rows", ()) or ():
         addr = _as_text(getattr(r, "datum_address", ""))
@@ -320,37 +416,41 @@ def iter_event_log_entries(doc: Any) -> list[dict[str, Any]]:
         kind_ref = pairs.get("6-1-1", [""])[0]
         if not node or not (lcls or kind_ref):
             continue
-        event_class = (type_lcl.get(kind_ref, f"1-3-{kind_ref}" if kind_ref else "")
-                       or next((c for c in lcls
-                                if c.startswith("1-3-") and not c.startswith("1-3-8")), ""))
+        event_class = (type_lcl.get(kind_ref, vocabulary.node("class", int(kind_ref)) if kind_ref.isdigit() else "")
+                       or next((c for c in lcls if vocabulary.is_("class", c)), ""))
         try:
             span = int(pairs.get(_SPAN, ["0"])[0] or 0)
         except ValueError:
             span = 0
         entries.append({
             "label": _row_label(r),
+            # An entry that cannot name its own address cannot be edited in place. Carried here
+            # rather than re-derived by each caller so the reader stays the single parse.
+            "datum_address": addr,
             "node": node,
             "event_class": event_class,
-            "event_kind": next((c for c in lcls if c.startswith("1-3-8")), ""),
-            "structure": next((c for c in lcls if c.startswith("1-5-")), "") or doc_structure,
+            "event_kind": next((c for c in lcls if vocabulary.is_("kind", c)), ""),
+            "structure": next((c for c in lcls if vocabulary.is_("structure", c)), "") or doc_structure,
             "stamps": pairs.get(_STAMP, []),
             "span": span,
-            "span_unit": next((c for c in lcls if c.startswith("1-6-")), ""),
+            "span_unit": next((c for c in lcls if vocabulary.is_("unit", c)), ""),
             "coord": pairs.get(_COORD, [""])[0],
             "title": pairs.get(_NAME, [""])[0],
         })
     return entries
 
 
-def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
-                              now: datetime | None = None,
-                              section: str | None = None) -> dict[str, Any]:
-    """Pure: assemble the NETWORK map v1 payload from the mycelium_network manifest.
-    Separated from the db read so it is unit-testable.
+def build_network_map_base(docs: list[Any], *, sandbox_id: str,
+                           now: datetime | None = None) -> dict[str, Any]:
+    """Pure: the section-INDEPENDENT half of the NETWORK map v1 payload, built once.
 
-    ``section`` (one of :data:`NETWORK_SECTIONS`) narrows the payload to a single NETWORK
-    sub-tab: profiles + events are filtered to that section, and all derived facets
-    (csa_widgets, region / county / class / type counts, header counts) reflect the slice."""
+    Separated from the db read so it is unit-testable, and separated from the section filter
+    so one request can serve several sub-tabs from a single build. Everything costly lives
+    here: the manifest walk, the gazetteer labels, the decoded boundary geometry, ``features``
+    and ``region_layers``. ``profiles`` and ``events`` come back fully TAGGED with their
+    section but unfiltered — :func:`section_view` does the filtering and recomputes the facets
+    that depend on it.
+    """
     now = now or datetime.now(UTC)
     by_name: dict[str, Any] = {}
     for doc in docs:
@@ -360,7 +460,15 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     manifest = by_name.get(MANIFEST_NAME)
     if manifest is None:
         return _error(f"{SOURCE_SANDBOX} source-binary manifest ({MANIFEST_NAME}) not found")
-    resources = _manifest_resources(manifest)
+    # Read the manifest through the sources resolver rather than parsing it here, so
+    # this surface reports a stale or missing pin instead of rendering it as though
+    # nothing were wrong. verify=False: the map is a hot path and the bitstream
+    # family costs a closure encode per resource — the Sources panel and the
+    # coherence gate are where pins are actually checked.
+    resolution = resolve_sources(docs, sandbox=SOURCE_SANDBOX, manifest_name=MANIFEST_NAME)
+    resources = [{"name": r.row.declared_name, "node": r.row.node,
+                  "source_binary": r.row.recorded_hash, "kind": r.row.kind or "boundary"}
+                 for r in resolution.sources]
 
     # gazetteer labels (administrative doc) → region tags for entity nodes
     node_label: dict[str, str] = {}
@@ -395,6 +503,7 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     # and each host's ag-profile categories (fnd_ag_profiles).
     entity_name: dict[str, str] = {}
     admin_nodes: set[str] = set()
+    jurisdiction_of: dict[str, str] = {}
     entity_class: dict[str, str] = {}
     for doc_name in ("legal_entity", "administrative_entity"):
         d = by_name.get(doc_name)
@@ -406,15 +515,35 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
             entity_name.setdefault(node, _decode_bits(pairs.get(_NAME, [_row_label(r)])[0]))
             if doc_name == "administrative_entity":
                 admin_nodes.add(node)
+                # region_polygon_ref IS the gazetteer node the boundary document is named for,
+                # so this join is what lets an outline say whether it is a city, a township or
+                # a village without the map hardcoding a list.
+                region_ref = pairs.get(_REGION_REF, [""])[0]
+                if region_ref:
+                    jurisdiction_of.setdefault(region_ref, pairs.get(_JURISDICTION, [""])[0])
             elif _LCL in pairs:
                 entity_class.setdefault(node, pairs[_LCL][0])
     host_profile_cats: dict[str, list[str]] = {}
+    # Where the event vocabulary and the ag categories live in THIS tree (by label); the
+    # legacy shape for a corpus whose tree predates the labels. Built before anything
+    # categorizes a profile or an event.
+    lcl_doc = next((by_name[n] for n in LOCAL_DOMAIN_NAMES if n in by_name), None)
+    vocabulary = EventVocabulary.from_log(_ld.read_log(lcl_doc)) if lcl_doc is not None else LEGACY
     profiles_doc = by_name.get("fnd_ag_profiles")
+    if profiles_doc is None:
+        # The ag profiles moved to agnet/member_ag_profiles (2026-08-05); the
+        # registrar name above stays as the first lookup for a still/cached corpus
+        # that predates the move. Without this the map lost its ag-profile colour
+        # classes silently — `profiles_doc is None` renders, just wrong.
+        profiles_doc = next(
+            (d for d in docs
+             if ".agnet.member_ag_profiles." in _as_text(getattr(d, "document_id", ""))),
+            None)
     for r in (getattr(profiles_doc, "rows", ()) or ()) if profiles_doc is not None else ():
         pairs = _pairs(_row_head(r))
         node, lcl_node = pairs.get(_NODE, [""])[0], pairs.get(_LCL, [""])[0]
         if node and lcl_node:
-            host_profile_cats.setdefault(node, []).append(_category_for(lcl_node))
+            host_profile_cats.setdefault(node, []).append(_category_for(lcl_node, vocabulary))
 
     def entity_kind_of(node: str) -> str:
         """The marker GLYPH class: administrative / community / cooperative by entity
@@ -423,10 +552,10 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
         csa profile); else a legal organization."""
         if node in admin_nodes:
             return "administrative"
-        cls = entity_class.get(node, "")
-        if cls.startswith("1-1-2"):
+        cls = vocabulary.below("entity", entity_class.get(node, ""))
+        if cls[:1] == (2,):            # informal
             return "community"
-        if cls.startswith("1-1-1-4"):
+        if cls[:2] == (1, 4):          # legal / cooperative
             return "cooperative"
         cats = host_profile_cats.get(node, [])
         if "market" in cats:
@@ -444,7 +573,6 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
 
     # lcl labels for profile subtypes / event classes / cadence
     lcl_label: dict[str, str] = {}
-    lcl_doc = by_name.get("lcl")
     for r in (getattr(lcl_doc, "rows", ()) or ()) if lcl_doc is not None else ():
         pairs = _pairs(_row_head(r))
         node = pairs.get(_LCL, [""])[0]
@@ -457,11 +585,11 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     event_docs: list[Any] = []
     rendered = 0
     for res in resources:
-        doc = by_name.get(res["name"])
+        doc = resolution.document(res["name"])
         if doc is None:
             continue
         if res["kind"] == "boundary":
-            rings = _outer_rings((getattr(doc, "document_metadata", {}) or {}).get("reference_geojson"))
+            rings = _boundary_rings(doc)
             if not rings:
                 continue
             rendered += 1
@@ -481,6 +609,10 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                                    # gazetteer node (county boundaries are depth-5) so the
                                    # client can bounds-fit the view to selected counties.
                                    "node": res["name"],
+                                   # What KIND of jurisdiction this outline is. A township and
+                                   # the village carved out of it overlap by design, so the
+                                   # reader needs to know which is which to read the overlap.
+                                   "jurisdiction": jurisdiction_of.get(res["name"], ""),
                                    "region_node": res["name"] if level == "county" else "",
                                    "source_binary": res["source_binary"]},
                 })
@@ -493,8 +625,8 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
                 lonlat = _lonlat(pairs.get(_COORD, [""])[0])
                 if not node or not lcl_node or lonlat is None:
                     continue
-                category = _category_for(lcl_node)
-                icon = _substance_for_profile(lcl_node)   # WHAT it markets → glyph
+                category = _category_for(lcl_node, vocabulary)
+                icon = _substance_for_profile(lcl_node, vocabulary)   # WHAT it markets → glyph
                 if icon == "farm_stand" and category == "producer":
                     # Entity-LEVEL farm-stand profiles (lcl 1-2-1-4 subtype)
                     # present as farm stands EVERYWHERE — TYPE facet, chip and
@@ -543,13 +675,25 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     # parent event's closure runs (qc day stamp + day-unit span)
     open_rows: list[dict[str, Any]] = []
     closures_by_parent: dict[str, list[tuple[int, int]]] = {}
+    # Counted HERE, where the parse already happens, so a caller can state what the schedule
+    # covers without parsing a log a second time. `closures` are not losses: an off_season entry
+    # becomes a gap in its parent's window, which is why parsed != open + rendered.
+    log_coverage: list[dict[str, Any]] = []
     for doc in event_docs:
-        for entry in iter_event_log_entries(doc):
-            if entry["event_kind"] == _KIND_OFF_SEASON:
+        parsed = iter_event_log_entries(doc, vocabulary)
+        closures = sum(1 for e in parsed if ordinal(e["event_kind"]) == KIND_OFF_SEASON)
+        log_coverage.append({
+            "document": _doc_name(doc),
+            "parsed": len(parsed),
+            "closures": closures,
+            "events": len(parsed) - closures,
+        })
+        for entry in parsed:
+            if ordinal(entry["event_kind"]) == KIND_OFF_SEASON:
                 if not entry["stamps"]:
                     continue
                 try:
-                    day, _h, _m = parse_ic_stamp(entry["stamps"][0], structure=LCL_QC)
+                    day, _h, _m = parse_ic_stamp(entry["stamps"][0], structure=STRUCTURE_QC)
                 except ValueError:
                     continue
                 parent = entry["label"].rsplit(".off_season", 1)[0]
@@ -561,12 +705,12 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     for item in open_rows:
         node = item["node"]
         closures = closures_by_parent.get(item["label"], [])
-        if item["structure"] == LCL_HC and item["stamps"]:
+        if ordinal(item["structure"]) == STRUCTURE_HC and item["stamps"]:
             hc_days: list[int] = []
             hh = mm = 0
             try:
                 for s in item["stamps"]:
-                    d, hh, mm = parse_ic_stamp(s, structure=LCL_HC)
+                    d, hh, mm = parse_ic_stamp(s, structure=STRUCTURE_HC)
                     hc_days.append(d)
             except ValueError:
                 continue
@@ -575,8 +719,8 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
             else:  # open all cycle: present the current calendar year
                 win_start = date(today.year, 1, 1)
                 win_end = date(today.year, 12, 31)
-            cadence_nodes = (["1-4-3"] if len(set(hc_days)) == 7
-                             else [f"1-4-1-{d}" for d in sorted(set(hc_days))])
+            cadence_nodes = ([vocabulary.node("cadence", 3)] if len(set(hc_days)) == 7
+                             else [vocabulary.node("cadence", 1, d) for d in sorted(set(hc_days))])
             occurrences = [d.isoformat() for d in
                            next_hc_occurrences(hc_days, closures, now=today)]
             time_range = _time_range_text(hh, mm, item["span"])
@@ -584,14 +728,14 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
             weekdays = sorted({d % 7 for d in hc_days})  # hc day 1 = Monday → js 1
             start_min = hh * 60 + mm
             end_min = min(start_min + max(0, int(item["span"])), 24 * 60 - 1)
-        elif item["structure"] == LCL_QC and item["stamps"]:
+        elif ordinal(item["structure"]) == STRUCTURE_QC and item["stamps"]:
             try:
-                day, _h, _m = parse_ic_stamp(item["stamps"][0], structure=LCL_QC)
+                day, _h, _m = parse_ic_stamp(item["stamps"][0], structure=STRUCTURE_QC)
             except ValueError:
                 continue
             win_start = date_of_qc_day(day, cycle_start_year=cycle_start_year_of(today))
             win_end = win_start + timedelta(days=max(1, item["span"]) - 1)
-            cadence_nodes = ["1-4-2"]
+            cadence_nodes = [vocabulary.node("cadence", 2)]
             occurrences = ([max(today, win_start).isoformat()]
                            if today <= win_end else [])
             time_range = "00:00–23:59"
@@ -610,8 +754,8 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
             "host_category": host_cls,
             "host_category_label": host_style["label"],
             "color": host_style["color"],
-            "icon": EVENT_CLASS_ICON.get(event_class, "ticket"),
-            "event_group": EVENT_CLASS_GROUP.get(event_class, "other"),
+            "icon": EVENT_CLASS_ICON.get(ordinal(event_class), "ticket"),
+            "event_group": EVENT_CLASS_GROUP.get(ordinal(event_class), "other"),
             "event_class": event_class,
             "event_class_label": lcl_label.get(event_class, event_class),
             "cadence": [lcl_label.get(c, c) for c in cadence_nodes],
@@ -634,16 +778,63 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
     # profile build, so TYPE facet, chip and section all agree ("Farm stand" on the
     # operation tab — never a "Producer" chip on an operation profile).
 
-    # NETWORK sub-tab sectioning: tag each profile and each event, then filter to the
-    # requested section. Facets + widgets below are computed from the filtered lists,
-    # so each sub-tab's counts are self-consistent.
+    # NETWORK sub-tab sectioning: TAG each profile and each event here, in the base. The
+    # filtering itself is `section_view`'s job, because three sub-tabs want three different
+    # slices of this one build.
     for p in profiles:
         p["section"] = _section_for(p["category"], p["icon"])
     for e in events:
         e["section"] = "operation"  # every cyclical event is a public food-access recurrence
+
+    return {
+        "schema": _SCHEMA,
+        "tool_id": "network_map",
+        "sandbox_id": sandbox_id,
+        "source_sandbox": SOURCE_SANDBOX,
+        "manifest_document_id": _as_text(manifest.document_id),
+        "resource_count": len(resources),
+        "rendered_resource_count": rendered,
+        # What the manifest declares and how far it can be trusted. Stated rather
+        # than assumed: before this, a pin that had drifted rendered identically to
+        # one that had not, so nothing anywhere said the map was reading documents
+        # its own manifest no longer describes.
+        "source_coverage": resolution.coverage(),
+        "feature_collection": {"type": "FeatureCollection", "features": features},
+        "feature_count": len(features),
+        "profiles": profiles,
+        "events": events,
+        # Per-log entry accounting, so a schedule view can say what it read rather than leave
+        # "55 events" to be taken on trust. An empty log still appears with zeros: a document
+        # that vanishes from the list reads as one that was never consulted.
+        "event_log_coverage": log_coverage,
+        "styles": ENTITY_CLASS_STYLES,
+        # The geospatial-browsing layer control. Toggling a layer changes which outlines paint
+        # and how the view fits; it never filters pins or re-resolves a node. `covers` names the
+        # counties whose municipalities are actually drawn, so a client can say WHY the
+        # municipality layer looks empty over a county instead of showing a blank.
+        "region_layers": _region_layers(features, node_label),
+        "plots_source": f"{SOURCE_SANDBOX} source binaries",
+    }
+
+
+def section_view(base: dict[str, Any], section: str | None = None) -> dict[str, Any]:
+    """One NETWORK sub-tab's view of an already-built base. Pure dict work, no geometry.
+
+    Everything expensive in :func:`build_network_map_base` — the manifest walk, the gazetteer,
+    the decoded boundary geometry, ``features``, ``region_layers`` — is section-INDEPENDENT.
+    Only the profile/event lists and the facets derived from them vary, so this is the whole of
+    what a second sub-tab actually needs recomputed.
+
+    Returns a NEW dict and never mutates ``base``: one request hands the same base to three
+    sub-tabs, so filtering in place would let the first sub-tab decide what the other two see.
+    """
+    if base.get("error"):
+        return dict(base)
+    profiles = list(base.get("profiles") or ())
+    events = list(base.get("events") or ())
     if section:
-        profiles = [p for p in profiles if p["section"] == section]
-        events = [e for e in events if e["section"] == section]
+        profiles = [p for p in profiles if p.get("section") == section]
+        events = [e for e in events if e.get("section") == section]
 
     # per-CSA widget: each csa_operator profile + its csa_pickup (lcl 1-3-2) events,
     # joined by the host msn node. Rendered as a card strip below the map + events list.
@@ -674,21 +865,12 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
             type_counts[p["category"]] = type_counts.get(p["category"], 0) + 1
 
     return {
-        "schema": _SCHEMA,
-        "tool_id": "network_map",
-        "sandbox_id": sandbox_id,
-        "source_sandbox": SOURCE_SANDBOX,
-        "manifest_document_id": _as_text(manifest.document_id),
-        "resource_count": len(resources),
-        "rendered_resource_count": rendered,
-        "feature_collection": {"type": "FeatureCollection", "features": features},
-        "feature_count": len(features),
+        **base,
         "profiles": profiles,
         "profile_count": len(profiles),
         "events": events,
         "event_count": len(events),
         "csa_widgets": csa_widgets,
-        "styles": ENTITY_CLASS_STYLES,
         # Chips are the 5 entity classes (the colour legend), fixed order, hosts counted.
         "categories": [
             {"key": key, "label": ENTITY_CLASS_STYLES[key]["label"],
@@ -705,8 +887,71 @@ def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
         "profile_types": [
             {"key": key, "label": _CATEGORY_LABEL.get(key, key), "count": count}
             for key, count in sorted(type_counts.items(), key=lambda kv: (-kv[1], kv[0]))],
-        "plots_source": f"{SOURCE_SANDBOX} source binaries",
     }
+
+
+def build_network_map_payload(docs: list[Any], *, sandbox_id: str,
+                              now: datetime | None = None,
+                              section: str | None = None) -> dict[str, Any]:
+    """Pure: assemble the NETWORK map v1 payload from the mycelium_network manifest.
+
+    Kept as the one-shot composition of :func:`build_network_map_base` and
+    :func:`section_view` so every caller that wants a single payload — the menubar's
+    ``network_map`` tool, micyte.com's export, the tests — reads exactly as it always did. A
+    caller that wants SEVERAL sections of the same corpus should build the base itself and call
+    ``section_view`` per section; that is what the agronomics NETWORK tab does, and it is the
+    difference between one build per request and six.
+    """
+    return section_view(
+        build_network_map_base(docs, sandbox_id=sandbox_id, now=now), section)
+
+
+#: The section-independent base, remembered per store version, sandbox and DAY. The base
+#: is the expensive half — the manifest walk, the gazetteer, the decoded boundary geometry
+#: (518 features, 3.2 MB) — and it depends on the store and on ``now`` only through
+#: ``now.date()`` (the open windows and next occurrences). So the key is the store's
+#: identity, the sandbox, the instance scope and today's date; a write or a new day is a
+#: new key. Two entries. `section_view` never mutates the base it is handed.
+_BASE_LOCK = threading.Lock()
+_BASE: OrderedDict[tuple[str, int, str, str, str], dict[str, Any]] = OrderedDict()
+_BASE_MAX = 2
+
+
+def remembered_network_map_base(
+    authority_db_file: Any, *, sandbox_id: str, now: datetime | None = None
+) -> dict[str, Any]:
+    """`build_network_map_base` over the registrar sandbox, once per (store, day)."""
+    from micyte.core.instance_scope import active_instance_msn
+
+    now = now or datetime.now(UTC)
+    path = Path(str(authority_db_file)) if authority_db_file is not None else None
+    try:
+        identity = (str(path.resolve()), int(path.stat().st_mtime_ns)) if path else ("", 0)
+    except OSError:
+        identity = (str(path), 0)
+    key = (identity[0], identity[1], _as_text(sandbox_id), active_instance_msn() or "",
+           now.date().isoformat())
+    with _BASE_LOCK:
+        hit = _BASE.get(key)
+        if hit is not None:
+            _BASE.move_to_end(key)
+    if hit is not None:
+        return hit
+    docs, err = read_sandbox_catalog(
+        authority_db_file, tenant_id=_TENANT_DEFAULT, sandbox=SOURCE_SANDBOX)
+    if err:
+        return _error(err)
+    base = build_network_map_base(docs, sandbox_id=sandbox_id, now=now)
+    # An error base (no manifest in this store) is remembered too: the store has not
+    # changed, so neither has the answer, and a write that adds the manifest is a new key.
+    with _BASE_LOCK:
+        for stale in [k for k in _BASE if k[0] == key[0] and k[2:] == key[2:] and k[1] != key[1]]:
+            _BASE.pop(stale, None)
+        _BASE[key] = base
+        _BASE.move_to_end(key)
+        while len(_BASE) > _BASE_MAX:
+            _BASE.popitem(last=False)
+    return base
 
 
 class NetworkMapViewer:
@@ -716,18 +961,28 @@ class NetworkMapViewer:
     label = "Network Map"
     summary = "Profiles, events and boundaries published by the Registrar via its source-binary manifest."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = REGISTRAR
+
     applies_to_archetype: tuple[str, ...] = ()
     applies_to_source_kind: tuple[str, ...] = ()
 
     def build_panel_payload(
         self, *, authority_db_file: Path | None, sandbox_id: str, document_id: str,
         datum_address: str, extra_query: dict[str, Any] | None = None,
+        network_base: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
-        if err:
-            return _error(err)
+        """``network_base`` is an already-built base to take a section view of.
+
+        A composer rendering several NETWORK sub-tabs (the agronomics tab) builds it once and
+        passes it to each; the registry/menubar path passes nothing and builds its own, exactly
+        as before.
+        """
         section = _as_text((extra_query or {}).get("network_section")) or None
-        return build_network_map_payload(docs, sandbox_id=sandbox_id, section=section)
+        if network_base is not None:
+            return section_view(network_base, section)
+        return section_view(
+            remembered_network_map_base(authority_db_file, sandbox_id=sandbox_id), section)
 
 
 register(NetworkMapViewer())

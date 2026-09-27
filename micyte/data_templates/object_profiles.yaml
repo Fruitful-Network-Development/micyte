@@ -1,0 +1,46 @@
+template_id: object_profiles
+schema: mycite.v2.datum.standard.object_profiles.v1
+sandbox: "*"
+archetype: standard_object_profile_row
+description: >
+  Static facts about a thing — a piece of equipment, a building, a vehicle, a
+  parcel. One row per object in layer 4 / value-group 8.
+
+  A PROFILE is deliberately not a log: it carries what is true of the object,
+  not what happened to it. Events belong in an `events` document that cites the
+  object, which is why `object_id` rides the lcl marker (`rf.3-1-5`) — a node
+  address other documents can point at, rather than a name they would have to
+  spell the same way.
+
+header_rows:
+  - address: "0-0-1"
+    field: schema
+    raw: "mycite.v2.datum.standard.object_profiles.v1"
+  - address: "0-0-2"
+    field: sandbox
+    raw: "{{sandbox}}"
+  - address: "0-0-3"
+    field: msn_id
+    raw: "{{msn_id}}"
+  - address: "0-0-4"
+    field: updated_at
+    raw: "{{updated_at}}"
+
+repeating_archetype:
+  layer: 4
+  value_group_reference_design:
+    object_id:
+      magnitude_kind: node_address
+      required: true
+    title:
+      magnitude_kind: trimmed_string
+      required: true
+    kind:
+      magnitude_kind: trimmed_string
+      required: false
+    identifier:
+      magnitude_kind: trimmed_string
+      required: false
+    note:
+      magnitude_kind: trimmed_string
+      required: false

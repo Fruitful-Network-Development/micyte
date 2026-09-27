@@ -13,8 +13,10 @@ from micyte.core.document_naming import (
 from micyte.ports.datum_store import (
     AuthoritativeDatumDocument,
     AuthoritativeDatumDocumentCatalogResult,
+    AuthoritativeDatumDocumentIndexResult,
     AuthoritativeDatumDocumentRequest,
     AuthoritativeDatumDocumentRow,
+    AuthoritativeDatumDocumentSummary,
     PublicationProfileBasicsWriteRequest,
     PublicationProfileBasicsWriteResult,
     PublicationTenantSummaryRequest,
@@ -562,6 +564,53 @@ class FilesystemSystemDatumStoreAdapter(SystemDatumStorePort):
                 "derived_materialization": derived_materialization,
             },
             warnings=tuple(warnings),
+        )
+
+    def read_document_index(
+        self,
+        request: AuthoritativeDatumDocumentRequest,
+    ) -> AuthoritativeDatumDocumentIndexResult:
+        """Every document's metadata, without its rows.
+
+        Projected from this adapter's own catalog read, with no index table and no
+        cache. That is not a lesser implementation, it is the whole optimization
+        being unnecessary here: the SQL adapter's index exists because ONE 138 MB
+        blob holds every document, so wanting a name costs the corpus. A filesystem
+        store already holds each document in its own file, and this adapter's reads
+        are already per-file cached — so the projection is the honest answer, and
+        the summaries it yields are the same type from the same ``from_document``.
+        """
+        catalog = self.read_authoritative_datum_documents(request)
+        return AuthoritativeDatumDocumentIndexResult(
+            tenant_id=catalog.tenant_id,
+            documents=tuple(
+                AuthoritativeDatumDocumentSummary.from_document(document)
+                for document in catalog.documents
+            ),
+            readiness_status=catalog.readiness_status,
+            warnings=catalog.warnings,
+        )
+
+    def read_authoritative_document(
+        self,
+        *,
+        tenant_id: str,
+        document_id: str,
+        allow_catalog_fallback: bool = True,
+    ) -> AuthoritativeDatumDocument | None:
+        """One document with its rows, or ``None``.
+
+        ``allow_catalog_fallback`` is accepted and ignored: it lets a caller say "do
+        not pay for the whole catalog to answer this", and here there is no such
+        toll to refuse. Taking the argument keeps one call shape across adapters —
+        the caller decides by cost, not by which store it happens to be talking to.
+        """
+        del allow_catalog_fallback
+        catalog = self.read_authoritative_datum_documents(
+            AuthoritativeDatumDocumentRequest(tenant_id=tenant_id)
+        )
+        return next(
+            (d for d in catalog.documents if d.document_id == document_id), None
         )
 
     def read_system_resource_workbench(self, request: SystemDatumStoreRequest) -> SystemDatumWorkbenchResult:

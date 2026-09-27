@@ -21,13 +21,17 @@ from pathlib import Path
 from typing import Any
 
 from micyte.core.datum_ops import field_registry as _fr
+from micyte.core.document_naming import parse_canonical_document_id
+from micyte.core.sources import resolve_sources
 from micyte.core.structures.hops import decode_hops_coordinate_token
+from micyte.ports.datum_write_policy import DeclaredWrite
 from micyte.state_machine.portal_shell.shell_schemas import (
     WORKBENCH_UI_TOOL_ROUTE,
 )
 
-from ._archetype import find_named_document, read_sandbox_catalog, resolve_tool_sandbox
+from ._archetype import read_sandboxes_catalog, resolve_tool_sandbox
 from ._registry import register
+from ._requirements import FARM
 from ._shared.utilities import as_text as _as_text
 from ._shared.utilities import row_head as _row_head
 from .geospatial_projection_viewer import build_geospatial_payload, resolve_farm_scene
@@ -38,7 +42,9 @@ _TENANT_DEFAULT = "fnd"
 # The registrar's own literal markers (NOT the agro_erp RF_* set): rf.3-1-2 is the entity msn node,
 # rf.3-1-1 the HOPS coordinate.
 _REGISTRAR = "registrar"
-_REG_PROFILES = "fnd_ag_profiles"
+# Moved to the channel by phase 3b: profiles OF members are not registrar resources.
+_REG_PROFILES = "member_ag_profiles"
+_REG_PROFILES_SANDBOX = "agnet"
 _REG_MSN = _fr.marker(_fr.REGISTRAR, "msn_id")        # rf.3-1-2 — entity msn node
 _REG_COORD = _fr.marker(_fr.REGISTRAR, "coordinate")  # rf.3-1-1 — HOPS coordinate
 # The frame an empty farm opens on, in metres across — big enough to place a field inside.
@@ -52,21 +58,38 @@ def _farm_center(authority_db_file: Path | None, doc: Any) -> tuple[float, float
     node is right there, and `create_farm` mints the farm against exactly that node, so an onboarded
     farm can be located even before it has any geometry.
 
-    Reads the registrar row DIRECTLY rather than going through build_network_map_payload: that
-    builder needs the registrar's ``network_sources`` manifest and projects the whole network, none
-    of which is wanted here. Registrar rows use their own literal markers — ``rf.3-1-2`` is the
-    entity msn (not a title) and ``rf.3-1-1`` the HOPS coordinate — so this must not reuse the
-    agro_erp ``RF_*`` set. Only called on the empty-farm path, and None when the farm has no
-    registrar profile (some older sandboxes do not).
+    Reads the profile row directly rather than going through build_network_map_payload: that
+    builder projects the whole network, none of which is wanted here. Registrar rows use their
+    own literal markers — ``rf.3-1-2`` is the entity msn (not a title) and ``rf.3-1-1`` the HOPS
+    coordinate — so this must not reuse the agro_erp ``RF_*`` set. Only called on the empty-farm
+    path, and None when the farm has no registrar profile (some older sandboxes do not).
+
+    The document is resolved through the FARM's own sources manifest (2026-08-02), so this
+    cross-sandbox read is one the farm sandbox declares rather than one this module asserts by
+    holding a sandbox constant. A farm that declares no manifest, or declares one without the
+    profile document, gets None here — the same answer it already got for a farm with no
+    registrar profile, and the empty-farm path is designed for it. Verification is skipped:
+    locating a map centre does not need the pin checked, and this is a per-request path.
     """
     parts = _as_text(getattr(doc, "document_id", "")).split(".")
     if len(parts) < 2 or not parts[1]:
         return None
     msn = parts[1]
-    docs, err = read_sandbox_catalog(authority_db_file, tenant_id=_TENANT_DEFAULT)
+    farm_sandbox = _as_text(getattr(parse_canonical_document_id(
+        _as_text(getattr(doc, "document_id", ""))), "sandbox", ""))
+    # Two sandboxes, not the tenant: the farm's own (its manifest) and the one the
+    # profile document lives in. This read every document in the store to find one row.
+    docs, err = read_sandboxes_catalog(
+        authority_db_file, tenant_id=_TENANT_DEFAULT,
+        sandboxes=(farm_sandbox, _REG_PROFILES_SANDBOX))
     if err:
         return None
-    profiles = find_named_document(docs, sandbox=_REGISTRAR, name=_REG_PROFILES)
+    # The ag profiles live in AGNET since the 2026-08-05 channel consolidation.
+    # This asked for f"{_REGISTRAR}_{_REG_PROFILES}" — a name no manifest declares
+    # (the manifests still said registrar_fnd_ag_profiles, the document's OLD home)
+    # — so the resolver missed and the farm-center fallback silently returned None.
+    profiles = resolve_sources(docs, sandbox=farm_sandbox).document(
+        f"{_REG_PROFILES_SANDBOX}_{_REG_PROFILES}")
     for row in getattr(profiles, "rows", ()) or ():
         head = _row_head(row)
         pairs = {_as_text(head[i]).lower(): _as_text(head[i + 1])
@@ -83,9 +106,24 @@ def _farm_center(authority_db_file: Path | None, doc: Any) -> tuple[float, float
 
 class PlotManagerViewer:
     tool_id = "plot_manager"
+    writes = (
+        DeclaredWrite(document_kind="field", action="save_field"),
+        DeclaredWrite(document_kind="cluster", action="save_cluster"),
+        DeclaredWrite(document_kind="cluster", action="delete_cluster"),
+        DeclaredWrite(document_kind="plot", action="save_plots"),
+        DeclaredWrite(document_kind="plot", action="delete_plots"),
+        # A READ (the first day a reshape would be visible), declared because the route
+        # has always gated it as a write. Removing the gate would LOOSEN it, and there is
+        # no read policy to move it to yet, so it is kept under this one and named here
+        # rather than quietly exempted.
+        DeclaredWrite(document_kind="plot", action="effective_day"),
+    )
     label = "Delegate"
     summary = "Draw fields and clusters, edit plots, and save the changes on an effective day."
     route = WORKBENCH_UI_TOOL_ROUTE
+    #: Scoped to the instance kind this belongs to — see tools/_requirements.
+    requires = FARM
+
     applies_to_archetype: tuple[str, ...] = ("hops_geospatial_filament",)
     applies_to_source_kind: tuple[str, ...] = ()
     wants_surface_query = True

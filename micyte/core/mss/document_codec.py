@@ -50,9 +50,9 @@ known width (width 0 ⇒ the field is omitted; the single possible value is impl
     <value stream>                          # concatenated per-datum object blobs
 
 Per-datum object blob (the non-uniform slice), in canonical datum order:
-    <is_refs_only:1 bit> g(arity) <body>
+    <is_refs_only:1 bit> g(arity) <body> g(title_code)
       refs-only (bit=1): arity × <ref_width(layer) bits>                 # active-set indices
-      tuple-bearing (bit=0): arity × ( <ref_width(layer) bits> + g(magnitude) )
+      tuple-bearing (bit=0): arity × ( <ref_width(layer) bits> + g(kind) + g(magnitude) )
 
 ``ref_width(layer) = bits_required(active_set_size - 1)`` (0 when size ≤ 1). The
 active set for a layer is the COBM-marked subset of all lower-layer datums, in
@@ -60,26 +60,72 @@ canonical order; a reference is its index into that set.
 
 The document **hash** is ``sha256`` over the encoded bitstream; **hyphae** is the
 same codec over a single datum's reindexed downward closure (rudi-inclusive).
+
+v3 — MSS as a transport, not only a hash
+----------------------------------------
+Two fields were added so a decoder can *reconstruct* a datum rather than merely
+compare its digest (see ``core/mss/magnitude.py`` for the measurement that forced
+this):
+
+- **``g(kind)`` before each magnitude.** The old wire stored a bare integer, and
+  the projection that produced it was not injective — 28.7% of the live corpus's
+  head values could not be recovered from it. The kind discriminator makes the
+  inverse exact.
+- **``g(title_code)`` per datum.** The raw-row grammar is
+  ``raw = [[address, …], [title]]``, but the adapter only ever read ``raw[0]``, so
+  the title slot was **never encoded at all**. ``0`` means absent; any value ``≥1``
+  decodes through :func:`core.mss.magnitude.decode_text`.
+
+The policy string moves to ``mos.mss_binary_v3`` accordingly. The bump is free:
+the live authority is entirely ``mos.mss_sha256_v1`` / ``mos.hyphae_chain_v1`` and
+**zero** rows were ever written under ``mos.mss_binary_v2`` — the cutover script
+(``fnd_app/scripts/recompile_datum_semantics.py``) has never been run. Fixing the
+projection *now*, before that cutover freezes lossy magnitudes into canonical
+identity, costs nothing; fixing it afterwards would be a corpus-wide re-keying.
 """
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-MSS_DOC_POLICY = "mos.mss_binary_v2"
+from .invariants import check_datums, sentence
+from .magnitude import decode_magnitude, decode_text, encode_text
+
+MSS_DOC_POLICY = "mos.mss_binary_v3"
 
 
 # --------------------------------------------------------------------------- #
 # Data model
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True, order=True)
+class MssTuple:
+    """One ``(reference, magnitude)`` pair of a tuple-bearing datum.
+
+    ``kind`` is the v3 addition: the magnitude alone is not enough to recover the
+    original token, so the discriminator travels with it (see
+    ``core/mss/magnitude.py``). Iterating a datum's tuples yields these rather
+    than bare 2-tuples, so a caller cannot silently drop the kind.
+    """
+
+    ref: str
+    kind: int
+    magnitude: int
+
+    @property
+    def token(self) -> object:
+        """The original raw-row token this pair encodes."""
+        return decode_magnitude(self.kind, self.magnitude)
+
+
 @dataclass(frozen=True)
 class MssDatum:
     layer: int
     value_group: int
     iteration: int
     refs: tuple[str, ...] = ()                       # VG0: referenced addresses
-    tuples: tuple[tuple[str, int], ...] = ()         # VG>0: (ref_address, magnitude)
+    tuples: tuple[MssTuple, ...] = field(default=())  # VG>0: (ref, kind, magnitude)
+    title: str | None = None                         # raw[1]; None = the row had none
 
     @property
     def address(self) -> str:
@@ -89,7 +135,7 @@ class MssDatum:
         # v2: keyed off which field is populated, NOT value_group (a datum may be
         # refs-only or tuple-bearing at any value_group).
         if self.tuples:
-            return tuple(ref for ref, _mag in self.tuples)
+            return tuple(item.ref for item in self.tuples)
         return tuple(self.refs)
 
 
@@ -221,7 +267,10 @@ def reindex_into_isolated_anthology(
                 value_group=group,
                 iteration=iteration,
                 refs=tuple(remap(r) for r in d.refs),
-                tuples=tuple((remap(r), m) for r, m in d.tuples),
+                tuples=tuple(
+                    MssTuple(remap(t.ref), t.kind, t.magnitude) for t in d.tuples
+                ),
+                title=d.title,
             )
         )
     canonical.sort(key=_canonical_sort_key)
@@ -240,30 +289,15 @@ class _Metadata:
 
 
 def _validate_canonical(datums: list[MssDatum]) -> None:
-    addresses = [d.address for d in datums]
-    if len(set(addresses)) != len(addresses):
-        raise MssFormatError("duplicate datum address")
-    by_addr = {d.address: d for d in datums}
-    layers = sorted({d.layer for d in datums})
-    if layers and layers != list(range(len(layers))):
-        raise MssFormatError("layers must be contiguous from 0 (reindex first)")
-    for d in datums:
-        # MSS-DOC.v2: a datum is EITHER refs-only OR tuple-bearing; arity is stored
-        # explicitly (len(refs) / len(tuples)) and is independent of value_group
-        # (which is purely the address segment — the live corpus has e.g. entity
-        # records carrying several tuples under value_group=1).
-        if d.refs and d.tuples:
-            raise MssFormatError(
-                f"datum {d.address} cannot be both refs-only and tuple-bearing"
-            )
-        for ref in d.dependency_addresses():
-            if ref not in by_addr:
-                raise MssFormatError(f"datum {d.address} references missing {ref}")
-            if by_addr[ref].layer >= d.layer:
-                raise MssFormatError(
-                    f"datum {d.address} references {ref} which is not in a lower layer "
-                    "(refs must point downward)"
-                )
+    """The wire-level invariants I1–I5 (``core/mss/invariants.py``), every refusal at once.
+
+    The five refusals this made from the start are unchanged in wording; what changed on
+    2026-09-17 is that they have ONE home, shared with the store's write door and the
+    corpus audit, so a rule the codec refuses is a rule nothing upstream can differ on.
+    """
+    refusals = check_datums(datums)
+    if refusals:
+        raise MssFormatError(sentence(refusals))
 
 
 def _build_metadata(datums: list[MssDatum]) -> _Metadata:
@@ -333,20 +367,24 @@ def encode_document(datums: list[MssDatum]) -> EncodedMss:
         ref_width = _ref_width(len(active))
         index_of = {p.address: i for i, p in enumerate(active)}
         for d in by_layer.get(layer, []):
-            # v2 object blob: [is_refs_only:1][arity:g][body]. Arity is explicit,
-            # so a datum's tuple count is independent of its value_group.
+            # v3 object blob: [is_refs_only:1][arity:g][body][title:g]. Arity is
+            # explicit, so a datum's tuple count is independent of its
+            # value_group; each magnitude carries its kind so the token is
+            # recoverable; the title slot is encoded at all (v2 dropped it).
             blob: list[str] = []
             if d.tuples:
                 blob.append("0")                       # tuple-bearing
                 blob.append(_g_encode(len(d.tuples)))
-                for ref, mag in d.tuples:
-                    blob.append(_fixed_encode(index_of[ref], ref_width))
-                    blob.append(_g_encode(mag))
+                for item in d.tuples:
+                    blob.append(_fixed_encode(index_of[item.ref], ref_width))
+                    blob.append(_g_encode(item.kind))
+                    blob.append(_g_encode(item.magnitude))
             else:
                 blob.append("1")                       # refs-only (incl. empty)
                 blob.append(_g_encode(len(d.refs)))
                 for ref in d.refs:
                     blob.append(_fixed_encode(index_of[ref], ref_width))
+            blob.append(_g_encode(0 if d.title is None else encode_text(d.title)))
             objects.append("".join(blob))
 
     # Stop-index table: cumulative exclusive ends of all objects except the last.
@@ -424,8 +462,15 @@ def decode_document(bitstream: str) -> list[MssDatum]:
         stops.append(s)
     value_stream = bitstream[cursor:]
 
-    # Slice the value stream into per-datum object blobs.
+    # Slice the value stream into per-datum object blobs. An EMPTY document (the
+    # eight live `calendar` documents and their siblings, 22 in the corpus) has no
+    # objects and no stops; slicing "" would yield one empty blob against zero
+    # specs, which is how `decode_document` refused its own output until 2026-09-23.
     object_count = len(specs)
+    if object_count == 0:
+        if value_stream:
+            raise MssFormatError("an empty document carries a non-empty value stream")
+        return []
     blobs: list[str] = []
     start = 0
     for stop in stops:
@@ -452,14 +497,29 @@ def decode_document(bitstream: str) -> list[MssDatum]:
             for _ in range(arity):
                 ridx, bc = _fixed_decode(blob, bc, ref_width)
                 refs.append(active[ridx])
-            datums.append(MssDatum(layer, group_number, iteration, refs=tuple(refs)))
+            title_code, bc = _g_decode(blob, bc)
+            datums.append(
+                MssDatum(
+                    layer, group_number, iteration,
+                    refs=tuple(refs),
+                    title=None if title_code == 0 else decode_text(title_code),
+                )
+            )
         else:
-            tuples: list[tuple[str, int]] = []
+            tuples: list[MssTuple] = []
             for _ in range(arity):
                 ridx, bc = _fixed_decode(blob, bc, ref_width)
+                kind, bc = _g_decode(blob, bc)
                 mag, bc = _g_decode(blob, bc)
-                tuples.append((active[ridx], mag))
-            datums.append(MssDatum(layer, group_number, iteration, tuples=tuple(tuples)))
+                tuples.append(MssTuple(active[ridx], kind, mag))
+            title_code, bc = _g_decode(blob, bc)
+            datums.append(
+                MssDatum(
+                    layer, group_number, iteration,
+                    tuples=tuple(tuples),
+                    title=None if title_code == 0 else decode_text(title_code),
+                )
+            )
 
     return datums
 
@@ -478,6 +538,7 @@ __all__ = [
     "EncodedMss",
     "MssDatum",
     "MssFormatError",
+    "MssTuple",
     "bits_required",
     "decode_document",
     "encode_document",

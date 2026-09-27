@@ -3,6 +3,7 @@
 from .base import (
     BinaryTextLens,
     EmailAddressLens,
+    FiatCentsLens,
     IdentityLens,
     Lens,
     NumericHyphenLens,
@@ -22,6 +23,7 @@ __all__ = [
     "DEFAULT_DATUM_LENS_REGISTRY",
     "DatumLensRegistry",
     "EmailAddressLens",
+    "FiatCentsLens",
     "IdentityLens",
     "Lens",
     "LensResolution",

@@ -152,12 +152,31 @@ def classify_row(datum_address: object, raw: Any) -> DatumShape:
     else:
         shape = SHAPE_PAIRS
         pair_count = max((head_len - 1) // 2, 0)
-        well_formed = head_len >= 3 and head_len % 2 == 1
+        # A head is an address followed by (marker, magnitude) pairs, so a well-formed one
+        # is ODD. It also used to have to be at least 3 — at least one pair — and that is
+        # the clause this drops.
+        #
+        # A head of exactly the address, carrying ZERO pairs, is a deliberate shape:
+        # provisioning seeds a blank document with one, because "a row with no field
+        # markers folds to nothing, so it cannot be read as a record of any kind while
+        # still leaving the document non-empty" (`bootstrap_handyman_sandbox`). Calling it
+        # malformed put two subsystems in flat contradiction — one writes the shape on
+        # purpose and the other refuses to stage any sandbox containing it, which blocked
+        # the workbook apply for every instance provisioned that way.
+        #
+        # Zero pairs is not a broken row. It is a row that says nothing yet, which is
+        # exactly what a freshly provisioned document is for.
+        well_formed = head_len >= 1 and head_len % 2 == 1
         if not well_formed:
             issues.append("pairs_arity_malformed")
-        elif pair_count != value_group:
+        elif pair_count != value_group and head_len > 1:
             # Advisory only: the address's value_group is the conventional pair
             # count but real rows diverge; the row's own width is authoritative.
+            #
+            # Skipped entirely for the structural row above. "This row holds 0 pairs where
+            # its address conventionally holds 1" is true of every seed in the store and
+            # says nothing an operator can act on — an advisory that always fires is noise
+            # that trains people to ignore the ones that matter.
             issues.append("value_group_pair_mismatch")
 
     return DatumShape(
@@ -184,10 +203,34 @@ def validate_row(datum_address: object, raw: Any) -> list[str]:
 class Column:
     """One column in a family's grid template."""
 
-    role: str  # address | relation | reference | magnitude | value | record_key | references
+    role: str  # address | label | relation | reference | magnitude | value | record_key | references
     index: int = 0  # 1-based pair index for reference/magnitude
     key: str = ""  # dict key for record_key columns
     variadic: bool = False  # the column spans a variable number of cells
+
+
+def _family_has_list_tail(materialized: list[tuple[object, Any]]) -> bool:
+    """Does any row in this family carry a non-empty LIST tail?
+
+    The tail of a ``PAIRS``/``RUDI`` row is where the datum's nominal label lives
+    — ``[['0-0-1', '~', '0-0-0'], ['time-ordinal-position']]``. It is the one
+    token on such a row a person can read, and for a long time no column role
+    existed for it, so the grid showed the three machine tokens and dropped the
+    name.
+
+    Asked per family rather than assumed, because a family whose rows all have
+    empty tails would otherwise grow a column of blanks. ``RECORD`` tails are
+    dicts and are already spent on ``record_key`` columns, so they do not count.
+    """
+    for _, raw in materialized:
+        if not isinstance(raw, list) or len(raw) < 2:
+            continue
+        tail = raw[1]
+        if isinstance(tail, list) and any(str(item).strip() for item in tail):
+            return True
+        if isinstance(tail, str) and tail.strip():
+            return True
+    return False
 
 
 def family_column_template(rows: Iterable[tuple[object, Any]]) -> list[Column]:
@@ -197,6 +240,10 @@ def family_column_template(rows: Iterable[tuple[object, Any]]) -> list[Column]:
     into a single family. Column WIDTH is taken from the family's actual rows
     (so a row whose pair count exceeds its ``value_group`` still gets cells),
     not from address arithmetic.
+
+    A ``label`` column follows the address whenever the family's rows carry a
+    list tail. It consumes no head slot, so it can sit anywhere in the template
+    without disturbing the positional reads that follow it.
     """
 
     materialized = list(rows)
@@ -206,17 +253,24 @@ def family_column_template(rows: Iterable[tuple[object, Any]]) -> list[Column]:
         return [Column("address")]
 
     dominant = Counter(shape.shape for shape in typed).most_common(1)[0][0]
+    labelled = _family_has_list_tail(materialized)
 
     if dominant == SHAPE_PAIRS:
         max_pairs = max((shape.pair_count for shape in typed if shape.shape == SHAPE_PAIRS), default=0)
         columns = [Column("address")]
+        if labelled:
+            columns.append(Column("label", variadic=True))
         for index in range(1, max_pairs + 1):
             columns.append(Column("reference", index=index))
             columns.append(Column("magnitude", index=index))
         return columns
 
     if dominant == SHAPE_RUDI:
-        return [Column("address"), Column("relation"), Column("references", variadic=True)]
+        columns = [Column("address")]
+        if labelled:
+            columns.append(Column("label", variadic=True))
+        columns.extend([Column("relation"), Column("references", variadic=True)])
+        return columns
 
     if dominant == SHAPE_RECORD:
         keys: list[str] = []
