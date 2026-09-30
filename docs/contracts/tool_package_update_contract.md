@@ -1,8 +1,12 @@
 # The tool-package update contract
 
-**Status: intent, not implementation.** Nothing here is built. It is written down so that
-what *is* built does not foreclose it, and so the two decisions it depends on are visible
-rather than discovered later.
+**Status: as-built for the transport, design-spec for what rides it.** The payload, the
+publisher's door, the instance's pull and the ledger's judgment (§ The transport) shipped on
+2026-09-25 and are pinned there. What a package FILE is and how it is signed (§ The two open
+decisions) are still decisions, written down so that what is built does not foreclose them.
+This page opened by denying that any of it existed until 2026-09-29, four days after the
+transport went live — a canonical page contradicting the tree it describes, which
+`test_contract_pages_are_pinned` now refuses.
 
 ---
 

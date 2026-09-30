@@ -408,7 +408,10 @@ def iter_event_log_entries(doc: Any, vocabulary: EventVocabulary = LEGACY) -> li
     entries: list[dict[str, Any]] = []
     for r in getattr(doc, "rows", ()) or ():
         addr = _as_text(getattr(r, "datum_address", ""))
-        if not (addr.startswith("7-3-") or addr.startswith("4-1-")):
+        # A legacy calendar row is a layer-4 row that is not the `4-2-K` scaffold; its
+        # family is its arity (I7) since the 2026-09-27 readdress, so `4-1-` alone would
+        # miss every entry that carries more than one pair.
+        if not (addr.startswith("7-3-") or (addr.startswith("4-") and not addr.startswith("4-2-"))):
             continue
         pairs = _pairs(_row_head(r))
         node = pairs.get(_NODE, [""])[0]

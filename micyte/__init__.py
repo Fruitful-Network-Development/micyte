@@ -9,4 +9,4 @@ that lets it ship on its own, and it is enforced, not hoped for — see
 fnd_app/tests/architecture/test_micyte_fnd_boundary.py.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

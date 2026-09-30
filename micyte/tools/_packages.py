@@ -153,7 +153,7 @@ def catalogue() -> tuple[ToolPackage, ...]:
             # because the tab is that tool, and `quiar_overview`/`project_manager`
             # stay in it although their tabs went — a package lists what an instance
             # may reach, and both are still reachable from the menubar.
-            version="2.3.0",
+            version="2.4.0",
             label="Quiar – Freelancer",
             summary=(
                 "Book work, group it into projects, keep the people you book it for, and "
@@ -214,7 +214,7 @@ def catalogue() -> tuple[ToolPackage, ...]:
             "brevat",
             # 1.1.0 (2026-09-12): the Stock tab and its `stock_log` document — what came
             # in and what went out, and the on-hand figure summed from it.
-            version="1.2.0",
+            version="1.3.0",
             label="Brevat",
             summary=(
                 "Products, supply, sales and the standing offer, for an instance that "
@@ -987,7 +987,7 @@ def _grantor_package() -> ToolPackage:
     """
     return _package(
         "grantor",
-        version="0.2.0",
+        version="0.3.0",
         label="Grantor",
         summary=(
             "The operator's side of the hosting relationship: what each service is "
@@ -1094,7 +1094,7 @@ def _oveure_package() -> ToolPackage:
         # 1.1.0: the sandbox files its documents on a reserved `documents` branch of its
         # own local domain, so a node DENOTES a document by naming its slot rather than by
         # the document's filename. Universal from 2026-08-20; no longer declared here.
-        version="1.2.0",
+        version="1.3.0",
         label="Oveure",
         summary=(
             "Notes, the domain sheet, and the instance's automation and AI seams. The "

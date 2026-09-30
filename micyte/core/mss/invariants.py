@@ -143,8 +143,19 @@ def _parse(address: object) -> tuple[int, int, int] | None:
 
 
 def _row(item: Any) -> tuple[str, Any]:
-    """``(datum_address, raw)`` from a row object, a dict, or a pair."""
+    """``(datum_address, raw)`` from a row object, a dict, a pair — or a bare raw row.
+
+    A raw row ``[[address, marker, magnitude, …], [title]]`` is ALSO a two-element list,
+    and until 2026-09-29 it was read as an ``(address, raw)`` pair: the head became the
+    "address", the title list the "raw", and every such row was silently skipped as
+    unparseable. ``arity_convention_holds`` then answered ``None`` ("has not said") for a
+    document that plainly kept the convention. A pair's first element is a string; a raw
+    row's is the head list — that is the whole distinction.
+    """
     if isinstance(item, (tuple, list)) and len(item) == 2:
+        if isinstance(item[0], list):
+            head = item[0]
+            return (str(head[0]) if head else ""), item
         return str(item[0] or ""), item[1]
     if isinstance(item, dict):
         return str(item.get("datum_address") or ""), item.get("raw")
@@ -308,6 +319,88 @@ def check_new_rows(existing: Iterable[Any], new: Iterable[Any], *, layer: int = 
     return tuple(out)
 
 
+#: A sentinel for "no prior row at this address" — ``None`` is a possible raw value.
+_MISSING = object()
+
+
+def _canon(raw: Any) -> Any:
+    """A row's value, shape-normalised: the prior comes back from the store as JSON lists,
+    the replacement may carry the writer's tuples. Same cells, one comparison."""
+    if isinstance(raw, (list, tuple)):
+        return [_canon(item) for item in raw]
+    return raw
+
+
+def _gaps(iterations: Iterable[int]) -> frozenset[int]:
+    """The holes in a family: every iteration below its highest that nothing holds."""
+    held = set(iterations)
+    if not held:
+        return frozenset()
+    return frozenset(set(range(1, max(held) + 1)) - held)
+
+
+def check_replaced_rows(existing: Iterable[Any], replacement: Iterable[Any], *,
+                        layer: int = ROW_LAYER,
+                        covers: Callable[[Any], bool] | None = None, archetype: str = "",
+                        title_chars: int = TITLE_CHARS, artifact: bool = False) -> tuple[Refusal, ...]:
+    """The REPLACE door's judgment: a document handed back whole, against the one it replaces.
+
+    Every writer that edits a document in place — the ag-profile, sources, notes and
+    object-profile runtimes, the repair scripts — replaces the whole document, and until
+    2026-09-29 that door judged nothing: a writer could place a four-pair row at ``4-1-1``
+    in a document that keeps its rows at ``4-4`` and be told nothing (the rehearsal that
+    found it is in `evidence/isolated-development-readiness-2026-09-27`). So the door
+    judges what CHANGED, by the same rules the append door holds new rows to:
+
+    * I6, I9, I10 on every row that is new or whose bytes changed;
+    * I7 on those rows when the document being replaced keeps the arity convention
+      (:func:`arity_convention_holds` on ``existing``) — a positional document is left to
+      its own, as the append door leaves it;
+    * I8 per family the replacement touched: the family may not GAIN a hole. A compaction
+      closes holes and a readdress fills a family from 1 — both pass; a writer that skips
+      an iteration opens one — refused, naming the first new hole. A hole an earlier writer
+      left is the audit's finding, not this writer's fault, so it is not judged here.
+
+    Rows the replacement drops are not judged: a delete cannot violate a row rule, and
+    the hole it may leave is the one case the I8 rule above deliberately admits, because
+    the alternative is a door that refuses every delete but the last row's.
+    """
+    before = {address: _canon(raw) for address, raw in (_row(r) for r in existing)}
+    after = [(address, raw) for address, raw in (_row(r) for r in replacement)]
+    arity = arity_convention_holds(before.items(), layer=layer) is True
+    out: list[Refusal] = []
+    touched: set[tuple[int, int]] = set()
+    for address, raw in after:
+        parsed = _parse(address)
+        prior = before.get(address, _MISSING)
+        if prior is _MISSING or prior != _canon(raw):
+            out.extend(_check_one(address, raw, layer=layer, covers=covers, archetype=archetype,
+                                  title_chars=title_chars, artifact=artifact, arity=arity))
+            if prior is _MISSING and parsed is not None and parsed[0] == layer:
+                touched.add(parsed[:2])
+    kept = {address for address, _raw in after}
+    for address in before:
+        parsed = _parse(address)
+        if address not in kept and parsed is not None and parsed[0] == layer:
+            touched.add(parsed[:2])
+    for family in sorted(touched):
+        held_before = {p[2] for p in (_parse(a) for a in before) if p is not None and p[:2] == family}
+        was = _gaps(held_before)
+        now = _gaps(p[2] for p in (_parse(a) for a, _r in after) if p is not None and p[:2] == family)
+        # A hole where a row USED to be is a delete's hole, admitted; a hole where nothing
+        # ever was is a writer skipping ahead, refused.
+        opened = sorted((now - was) - held_before)
+        if opened:
+            lay, vg = family
+            out.append(Refusal(
+                I8.id, f"{lay}-{vg}-{opened[0]}",
+                f"the replacement leaves family {lay}-{vg} with a new gap at {lay}-{vg}-{opened[0]}"
+                f"{' (and ' + str(len(opened) - 1) + ' more)' if len(opened) > 1 else ''}: "
+                f"a row lands one past the family's highest, and a compaction closes holes "
+                f"rather than opening them"))
+    return tuple(out)
+
+
 __all__ = [
     "BLANK_FAMILY",
     "DOCUMENT",
@@ -333,6 +426,7 @@ __all__ = [
     "arity_of",
     "check_datums",
     "check_new_rows",
+    "check_replaced_rows",
     "check_rows",
     "head_of",
     "is_refs_only",

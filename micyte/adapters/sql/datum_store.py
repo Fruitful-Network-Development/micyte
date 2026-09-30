@@ -34,7 +34,13 @@ from micyte.core.document_naming import (
 )
 from micyte.core.mss.document_adapter import binary_identity
 from micyte.core.mss.document_codec import MssFormatError
-from micyte.core.mss.invariants import InvariantRefused, Refusal, check_new_rows, check_rows
+from micyte.core.mss.invariants import (
+    InvariantRefused,
+    Refusal,
+    check_new_rows,
+    check_replaced_rows,
+    check_rows,
+)
 from micyte.core.mss.transport import (
     MSS_TRANSPORT_POLICY,
     canonical_json,
@@ -1468,6 +1474,26 @@ class SqliteSystemDatumStoreAdapter(
                 )
         if not pairs:
             return
+        # The engine's document-level invariants over what CHANGED, judged BEFORE the
+        # transaction opens and against the prior as the store holds it
+        # (`core/mss/invariants.check_replaced_rows`). Until 2026-09-29 this door — the one
+        # every in-place writer and every repair script replaces through — judged nothing,
+        # so a four-pair row at `4-1-1` landed in a document that keeps its rows at `4-4`
+        # while the append door next to it would have refused the same row. A replacement
+        # with no prior is a create, and is held to the create door's rule: I7 is not
+        # judged, because the document's first rows set which convention it keeps.
+        for prior_id, document in pairs:
+            new_id = _as_text(document.document_id)
+            artifact = new_id.split(".", 1)[0] == "art"
+            if prior_id:
+                prior = self.read_authoritative_document(
+                    tenant_id=tenant_id, document_id=prior_id, allow_catalog_fallback=False)
+                refusals = (check_replaced_rows(prior.rows, document.rows, artifact=artifact)
+                            if prior is not None else ())
+            else:
+                refusals = check_rows(document.rows, artifact=artifact, arity=False)
+            if refusals:
+                raise InvariantRefused(refusals)
         tenant = _as_text(tenant_id).lower()
         updated_at = self._clock()
         with self._connect() as connection:

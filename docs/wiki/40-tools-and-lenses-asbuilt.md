@@ -121,8 +121,8 @@ passed it silently.
 
 | Path | Role | LOC |
 |---|---|---|
-| `fnd_app/tests/unit/test_tool_eligibility.py:101` | Eligibility intersection + hyphae-chain widening + extension exclusion. | 218 |
-| `fnd_app/tests/unit/test_state_machine_lens_registry.py:14` | `BinaryTextLens` ASCII decode + family/value-kind preference. | 31 |
+| `micyte/tests/unit/test_tool_eligibility.py:101` | Eligibility intersection + hyphae-chain widening + extension exclusion. | 218 |
+| `micyte/tests/unit/test_state_machine_lens_registry.py:14` | `BinaryTextLens` ASCII decode + family/value-kind preference. | 31 |
 | `fnd_app/tests/architecture/test_palette_eligibility_purity.py:75` | AST-scans `tool_eligibility.py` for I/O imports — enforces purity. | 138 |
 
 ## How it works

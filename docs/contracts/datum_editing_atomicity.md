@@ -184,7 +184,7 @@ pre-edit state.
 | SQL apply | `micyte/adapters/sql/datum_store.py` | 761–818 |
 | Version identity | `micyte/core/datum_semantics/engine.py` | `build_document_version_identity` |
 | Workbench entry | `fnd_app/instances/_shared/runtime/portal_datum_workbench_mutation_runtime.py` | 180–199 |
-| Unit tests | `fnd_app/tests/unit/test_mss_transform.py` | all |
+| Unit tests | `micyte/tests/unit/test_mss_transform.py` | all |
 
 ---
 

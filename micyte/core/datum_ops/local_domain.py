@@ -173,13 +173,45 @@ NODE_FAMILY = "4-2"
 REF_FAMILY = "4-3"
 FULL_FAMILY = "4-4"
 
-#: EVERY family a definition row can live in, in arity order. Readers that mean "is this
-#: row a node definition at all" ask this and never a pair of names — six of them did, and
-#: adding a family would have left each one silently blind to it.
+#: The families the BASE shapes live in, in arity order: a node (2 pairs), a node wearing
+#: a glyph or denoting a document (3), a node doing both (4). NOT every family a definition
+#: row can live in: a row minted with further pairs — a record container's VIEW marker, a
+#: source's pin — carries one pair more per extra and lives one family higher, because the
+#: address IS the arity (I7). Readers that mean "is this row a node definition at all"
+#: ask :func:`is_definition_address` and the head's shape, never these names; six readers
+#: matched these prefixes until 2026-09-29 and would have been blind to a five-pair row.
 DEFINITION_FAMILIES: tuple[str, ...] = (NODE_FAMILY, REF_FAMILY, FULL_FAMILY)
-
-#: The same, as address PREFIXES, because most callers are matching ``startswith``.
+#: The same, as address PREFIXES — for the base shapes only (see above).
 DEFINITION_PREFIXES: tuple[str, ...] = tuple(f"{family}-" for family in DEFINITION_FAMILIES)
+
+
+def is_definition_row(address: Any, head: Any) -> bool:
+    """Is this lcl row a node definition — a layer-4 row whose head opens with a node?
+
+    Looser than `refs._is_definition_head` on purpose: that predicate also requires a
+    KNOWN node-ref marker, and the tree must still see a node written on a marker nobody
+    classified (the delete verbs refuse to sweep exactly those — "unclassified" is a
+    finding, not an invisibility). In the local domain document every layer-4 row is a
+    definition row or the structural blank, so the shape asked here is the node itself.
+    """
+    if not is_definition_address(address) or not isinstance(head, list) or len(head) < 3:
+        return False
+    from micyte.core.datum_ops.refs import is_node_addr_reference
+
+    return is_node_addr_reference(head[2])
+
+
+def is_definition_address(address: Any) -> bool:
+    """Could ``address`` hold a node definition row — is it an instance (layer-4) row?
+
+    The family says the arity, not the kind; the KIND is the head's shape
+    (`refs._is_definition_head`: an id-pair on a node marker, then a title). A reader
+    that filters on a family tuple decides the arity a node may have, and no reader has
+    that authority.
+    """
+    text = str(address or "")
+    parts = text.split("-")
+    return len(parts) == 3 and parts[0] == "4" and all(p.isdigit() for p in parts)
 
 #: What separates a node address from an OPTION in a slot's title. A space, because a title
 #: is 64 characters of printable ASCII that a person reads, and ``2-1-3 yes`` is what the
@@ -1012,6 +1044,8 @@ __all__ = [
     "checked_title",
     "domain_markers",
     "filed_documents",
+    "is_definition_address",
+    "is_definition_row",
     "is_node_address",
     "option_slug",
     "parse_slot_title",

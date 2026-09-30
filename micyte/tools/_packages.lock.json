@@ -2,8 +2,8 @@
   "schema": "micyte.packages.lock.v1",
   "packages": {
     "brevat": {
-      "version": "1.2.0",
-      "digest": "sha256:54e5759ed43c20790fbf50fd4f57b1967ec36a918e09d6fcabe01f1f5977191d"
+      "version": "1.3.0",
+      "digest": "sha256:5c3be99bdb9fb8b26f0e15632c7dbdec636ef2786f8b1ce41460e6a56fa7af26"
     },
     "claude": {
       "version": "1.0.0",
@@ -18,20 +18,20 @@
       "digest": "sha256:b1082446db81fdf1fdc8b088bca3946d37d62960542e19ccc5ee601e161d078c"
     },
     "grantor": {
-      "version": "0.2.0",
-      "digest": "sha256:6a6de68c7041aeed0dc9c4413f794e925d4ada05854ba3905a6e9f3211084aa3"
+      "version": "0.3.0",
+      "digest": "sha256:4dee5824867a9db2c7582470359e71ef7ec33af3a356b966fe145d7ba645c0c8"
     },
     "oveure": {
-      "version": "1.2.0",
-      "digest": "sha256:5489d9f5681fd7bb78d49d56b331e5f7d4894ffbbde723509acbf64fc4d0364f"
+      "version": "1.3.0",
+      "digest": "sha256:1b0958316b89300d2192c2167af23ed55a21ee436695fb19cdb29584f488ec81"
     },
     "pim": {
       "version": "0.1.0",
       "digest": "sha256:d9e4228ec0b2afbde6415507cf35c97c5c78998f8b2d0d1ea5ce66d8122984d4"
     },
     "quiar": {
-      "version": "2.3.0",
-      "digest": "sha256:46f7f06585f5d88b12de7eda2cd381f37f2b7e94aa6d9fb8dc701cd95ee58b56"
+      "version": "2.4.0",
+      "digest": "sha256:431edb00eebd6f64c75d2413556745dc3199004b7eddad59b216e5c3eb3aca5c"
     }
   }
 }

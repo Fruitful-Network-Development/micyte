@@ -43,7 +43,6 @@ from ._shared.utilities import row_tail_label as _row_tail_label
 
 #: Every family an lcl definition row lives in — see
 #: :mod:`micyte.core.datum_ops.local_domain`.
-_LCL_FAMILIES = _ld.DEFINITION_PREFIXES
 
 #: Field kinds the renderer knows. Anything else is refused at build time rather than
 #: rendered as a bare text box that quietly loses the caller's intent.
@@ -311,7 +310,7 @@ def node_options(lcl_doc: Any, *prefixes: str) -> list[dict[str, str]]:
         # Both definition families: a node that denotes a document keeps its row at
         # `4-3-*` (micyte.core.datum_ops.local_domain), and a picker blind to it would
         # silently drop exactly the nodes an operator has attached something to.
-        if not _as_text(row.datum_address).startswith(_LCL_FAMILIES):
+        if not _ld.is_definition_address(row.datum_address):
             continue
         head = _row_head(row)
         if len(head) < 3:

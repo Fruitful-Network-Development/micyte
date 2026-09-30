@@ -249,6 +249,8 @@ here rather than deleted so the change of course stays visible.
 
 ### Still genuinely stubbed
 
+(Re-measured 2026-09-29: unchanged since 2026-07-22 — one, two and three files of 1, 41 and 3 lines.)
+
 - [`micyte/state_machine/mediation_surface`](../../micyte/state_machine/mediation_surface)
 - [`micyte/tools/_shared`](../../micyte/tools/_shared)
 - [`fnd_app/packages/sandboxes`](../../fnd_app/packages/sandboxes) (also used by Track 1)
