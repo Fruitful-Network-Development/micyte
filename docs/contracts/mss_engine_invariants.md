@@ -41,16 +41,16 @@ D1 (2026-09-17): a value group on an instance row IS its arity.
 
 | id | level | rule | enforced by | refusal sentence | pinned by |
 |---|---|---|---|---|---|
-| I1 | wire | every datum address is unique | codec `_validate_canonical` | `duplicate datum address` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I2 | wire | layers are contiguous from 0 (reindex first) | codec | `layers must be contiguous from 0 (reindex first)` | `fnd_app/tests/unit/test_mss_document_codec.py` (`test_non_contiguous_layers_rejected_by_encode`) |
-| I3 | wire | a datum is refs-only or tuple-bearing, never both | codec | `datum <a> cannot be both refs-only and tuple-bearing` | `fnd_app/tests/unit/test_mss_document_codec.py` (`test_refs_and_tuples_together_rejected`) |
-| I4 | wire | every reference names a datum in the set | codec | `datum <a> references missing <ref>` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I5 | wire | references point downward, to a strictly lower layer | codec | `datum <a> references <ref> which is not in a lower layer (refs must point downward)` | `fnd_app/tests/unit/test_mss_document_codec.py` (`test_upward_reference_rejected`) |
-| I6 | document | a row's head names its own address (`raw[0][0] == datum_address`); `art.` rows keep the artifact grammar and are outside this rule | store door | `row <a> has a head that names <b>` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I7 | document | an instance row (layer 4) carrying *n* ≥ 1 pairs lives in family `4-n`; a head with no pairs is the structural blank and lives in `4-1`; a `~` (refs-only) head is outside this rule | store door, for a document that keeps the convention (see below) | `row <a> carries <n> pairs, so its family is 4-<n>, not 4-<vg>` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I8 | document | iterations are contiguous from 1 within a layer-4 family; an appended row lands one past the family's highest (the name layers below are sparse by design) | store door (new rows); audit (whole document) | `row <a> would leave a gap: family <f> reaches <k>, so the next row is <f>-<k+1>` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I9 | document | a row a writer files under an archetype is covered by that archetype (`Archetype.covers`); structural rows (the blank, a `~` collection) say nothing about kind and are outside it | store door, when the writer names the archetype (`expects_archetype`); a two-archetype document — `job_document_runtime` — names them per row itself until the door takes a per-row map | `row <a> folds to a shape <archetype> does not cover` | `fnd_app/tests/unit/test_mss_invariants.py` |
-| I10 | document | a title is at most 64 ASCII characters (`labels.TITLE_BITS` = 512) | store door | `row <a> has a title of <n> characters; the title babelette holds 64` | `fnd_app/tests/unit/test_mss_invariants.py` |
+| I1 | wire | every datum address is unique | codec `_validate_canonical` | `duplicate datum address` | `micyte/tests/unit/test_mss_invariants.py` |
+| I2 | wire | layers are contiguous from 0 (reindex first) | codec | `layers must be contiguous from 0 (reindex first)` | `micyte/tests/unit/test_mss_document_codec.py` (`test_non_contiguous_layers_rejected_by_encode`) |
+| I3 | wire | a datum is refs-only or tuple-bearing, never both | codec | `datum <a> cannot be both refs-only and tuple-bearing` | `micyte/tests/unit/test_mss_document_codec.py` (`test_refs_and_tuples_together_rejected`) |
+| I4 | wire | every reference names a datum in the set | codec | `datum <a> references missing <ref>` | `micyte/tests/unit/test_mss_invariants.py` |
+| I5 | wire | references point downward, to a strictly lower layer | codec | `datum <a> references <ref> which is not in a lower layer (refs must point downward)` | `micyte/tests/unit/test_mss_document_codec.py` (`test_upward_reference_rejected`) |
+| I6 | document | a row's head names its own address (`raw[0][0] == datum_address`); `art.` rows keep the artifact grammar and are outside this rule | store door | `row <a> has a head that names <b>` | `micyte/tests/unit/test_mss_invariants.py` |
+| I7 | document | an instance row (layer 4) carrying *n* ≥ 1 pairs lives in family `4-n`; a head with no pairs is the structural blank and lives in `4-1`; a `~` (refs-only) head is outside this rule | store door, for a document that keeps the convention (see below) | `row <a> carries <n> pairs, so its family is 4-<n>, not 4-<vg>` | `micyte/tests/unit/test_mss_invariants.py` |
+| I8 | document | iterations are contiguous from 1 within a layer-4 family; an appended row lands one past the family's highest (the name layers below are sparse by design) | store doors — append (new rows), replace (a family may not gain a hole where no row was); audit (whole document) | `row <a> would leave a gap: family <f> reaches <k>, so the next row is <f>-<k+1>` | `micyte/tests/unit/test_mss_invariants.py` |
+| I9 | document | a row a writer files under an archetype is covered by that archetype (`Archetype.covers`); structural rows (the blank, a `~` collection) say nothing about kind and are outside it | store door, when the writer names the archetype (`expects_archetype`); a two-archetype document — `job_document_runtime` — names them per row itself until the door takes a per-row map | `row <a> folds to a shape <archetype> does not cover` | `micyte/tests/unit/test_mss_invariants.py` |
+| I10 | document | a title is at most 64 ASCII characters (`labels.TITLE_BITS` = 512) | store door | `row <a> has a title of <n> characters; the title babelette holds 64` | `micyte/tests/unit/test_mss_invariants.py` |
 
 ## What the live corpus said (2026-09-17, read-only, `scripts/audit_mss_invariants.py`)
 
@@ -92,6 +92,21 @@ D1 (2026-09-17): a value group on an instance row IS its arity.
 * The 24,249 findings the first run reported against `art.` documents were the checker
   misreading the artifact grammar (chain reference first) — that grammar is
   `datum_ops/artifact.py`'s and is excluded by rule, not by count.
+* **The replace door judges what CHANGED (2026-09-29).** `replace_documents_efficient` — the
+  door every in-place writer (ag profiles, sources, notes, object profiles) and every repair
+  script hands a whole document back through — judged nothing until a rehearsal on a copy of
+  the live store placed a four-pair row at `4-1-1` in a document keeping its rows at `4-4`
+  and was told yes, the day after the I7 conversion had moved every live document onto the
+  convention. It now calls `check_replaced_rows` before the transaction opens: I6, I9, I10 on
+  every row that is new or whose bytes changed; I7 on those rows when the PRIOR document
+  keeps the convention; I8 per touched family as "may not gain a hole where no row was" — a
+  compaction closes holes and a readdress fills a family from 1 (both pass), a delete's hole
+  is admitted (refusing it would refuse every delete but the last row's), a writer that skips
+  ahead is refused at the first new hole. A replacement with no prior is a create and takes
+  the create door's rule. Pinned by `TheReplaceDoorRefuses` in
+  `fnd_app/tests/unit/test_the_store_door_refuses.py` and `TheReplaceDoorJudgesWhatChanged`
+  in `test_mss_invariants.py`. Writers mint through `row_address.next_row_address` (the
+  family is the head's arity); a literal `4-1-` in a writer is what this door now catches.
 * The door judges the rows being WRITTEN. Existing gaps and lying heads are findings for
   the audit and for `transform.py`'s compaction, not a reason to refuse the next append.
 

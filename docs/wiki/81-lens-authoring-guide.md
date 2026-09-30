@@ -83,7 +83,7 @@ stable string used to label the lens in surfaces and in the staging envelope.
 | Package authority notes | [`micyte/state_machine/lens/README.md`](../../micyte/state_machine/lens/README.md) |
 | Display application (read path) | [`micyte/tools/workbench_ui/service.py`](../../micyte/tools/workbench_ui/service.py) |
 | Encode + validate on write (staging) | [`micyte/state_machine/nimm/staging.py`](../../micyte/state_machine/nimm/staging.py) |
-| Registry tests | [`fnd_app/tests/unit/test_state_machine_lens_registry.py`](../../fnd_app/tests/unit/test_state_machine_lens_registry.py) |
+| Registry tests | [`micyte/tests/unit/test_state_machine_lens_registry.py`](../../micyte/tests/unit/test_state_machine_lens_registry.py) |
 
 The built-in lenses you can reuse or subclass (all in
 [`base.py`](../../micyte/state_machine/lens/base.py)): `IdentityLens`
@@ -368,7 +368,7 @@ between today's auto-resolution and the managed model), see
 ## Testing your lens
 
 Follow the pattern in
-[`fnd_app/tests/unit/test_state_machine_lens_registry.py`](../../fnd_app/tests/unit/test_state_machine_lens_registry.py).
+[`micyte/tests/unit/test_state_machine_lens_registry.py`](../../micyte/tests/unit/test_state_machine_lens_registry.py).
 It is a plain `unittest` module with two kinds of checks you should replicate:
 
 ```python
@@ -404,7 +404,7 @@ For your own lens, add:
 Run just this module from the repo root:
 
 ```bash
-python -m pytest fnd_app/tests/unit/test_state_machine_lens_registry.py
+python -m pytest micyte/tests/unit/test_state_machine_lens_registry.py
 ```
 
 ## See also

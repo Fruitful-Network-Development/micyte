@@ -266,6 +266,7 @@ _REF_FAMILY = _ld.REF_FAMILY
 _FULL_FAMILY = _ld.FULL_FAMILY
 ld_ROOT_LABEL = _ld.ROOT_LABEL
 _DEFINITION_FAMILIES = _ld.DEFINITION_FAMILIES
+_ROW_LAYER = 4
 _kind_of_marker = _dr.kind_of_marker
 _NODE_KIND_TYPE = _dr.NODE_KIND_TYPE
 
@@ -339,10 +340,15 @@ class LclBuilder:
         highest: dict[str, int] = {}
         for r in lcl_rows:
             family, _, tail = str(r.datum_address).rpartition("-")
-            if family not in _DEFINITION_FAMILIES or not tail.isdigit():
+            # Any layer-4 family — the row's family is its arity, and a node minted with
+            # an extra pair (a VIEW, a source's pin) beside its glyph lives one family
+            # past `4-4`. The three named families were the filter until 2026-09-29 and
+            # would have dropped exactly those nodes from the node set the anchor is
+            # recompiled from.
+            head = r.raw[0] if isinstance(r.raw, list) and r.raw else None
+            if not _ld.is_definition_row(r.datum_address, head) or not tail.isdigit():
                 continue
             highest[family] = max(highest.get(family, 0), int(tail))
-            head = r.raw[0]
             node = str(head[2]) if len(head) >= 3 else None
             label = str(r.raw[1][0]) if len(r.raw) > 1 and r.raw[1] else ""
             if not node:
@@ -378,10 +384,19 @@ class LclBuilder:
         self.canonical: bool = _log.canonical
         self.object_root: str = _log.object_root
         self.overlay: dict[str, AuthoritativeDatumDocumentRow] = {}
-        self._next: dict[str, int] = {
-            family: highest.get(family, 0) + 1 for family in _DEFINITION_FAMILIES
-        }
+        #: The next free iteration per family — every family the tree holds, plus any a
+        #: writer asks for (`next_address` mints one past the highest, `1` for a family
+        #: the tree has not used).
+        self._next: dict[str, int] = {family: top + 1 for family, top in highest.items()}
+        for family in _DEFINITION_FAMILIES:
+            self._next.setdefault(family, 1)
         self._next[_NODE_FAMILY] = self.max_42 + 1
+
+    def next_address(self, family: str) -> str:
+        """The next free address in ``family`` — one past its highest, minted once."""
+        iteration = self._next.get(family, 1)
+        self._next[family] = iteration + 1
+        return f"{family}-{iteration}"
 
     @property
     def _next_42(self) -> int:
@@ -401,15 +416,23 @@ class LclBuilder:
         # icon wears the sandbox's default. `""` only on a tree with no glyph branch.
         icon = icon or self.default_glyph
         trailing = [pair for pair in ((marker, icon), (marker, slot)) if pair[1]]
-        family = (_FULL_FAMILY if len(trailing) == 2
-                  else _REF_FAMILY if trailing else _NODE_FAMILY)
-        key = f"{family}-{self._next[family]}"
-        self._next[family] += 1
+        # The family is the ARITY: the id pair, the title pair, every extra pair, every
+        # trailing reference. Until 2026-09-29 it counted the trailing references alone,
+        # so a source pinned beside its glyph (id, title, pin, icon — four pairs) was
+        # minted at `4-3`, which the store's replace door now refuses (I7).
+        family = f"{_ROW_LAYER}-{2 + len(extra) + len(trailing)}"
+        key = self.next_address(family)
         head: list[Any] = [key, marker, node, self.title_marker, _encode_label_bits(label)]
-        for extra_marker, extra_magnitude in extra:
-            head += [extra_marker, extra_magnitude]
+        # Trailing node references FIRST — the glyph, then the document — and every
+        # extra pair after them. That is the order `local_domain.trailing_refs` reads
+        # (from the title, stopping at the first pair that is not a node reference), and
+        # this wrote the extras first until 2026-09-29: a container's VIEW or a source's
+        # pin sat at index 5, the reader stopped there, and the glyph and the document
+        # behind it were invisible to every surface that asked the log.
         for extra_marker, magnitude in trailing:
             head += [extra_marker, magnitude]
+        for extra_marker, extra_magnitude in extra:
+            head += [extra_marker, extra_magnitude]
         if icon:
             self.icon_by_node[node] = icon
         if slot:

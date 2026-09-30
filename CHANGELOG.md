@@ -5,6 +5,40 @@ repository is tagged `v<version>` and the wheel on its release page is the artif
 `docs/standards/release_and_versioning.md` is the process; `scripts/publish_micyte.py` is
 the cut. A section is added when the version is bumped, not after.
 
+## 0.4.0 — 2026-09-30
+
+- The archetype library keeps the arity convention: its 100 documents' 234 positional
+  rows moved to the families their pair counts name, with every citation carried
+  (47 rewritten, cascade depth 3). An archetype's id is its content hash, so every one of
+  the 101 that moved is a new hash — the lock is re-cut and the four packages that pin
+  them bump with it: quiar 2.4.0, brevat 1.3.0, grantor 0.3.0, oveure 1.3.0. The live
+  audit reads I6 0 · I7 0 · I8 0 for the first time; the 24 I10 titles are the operator's.
+
+### Engine
+- The store's REPLACE door judges what changed (`check_replaced_rows`): I6, I9, I10 on
+  every row that is new or whose bytes changed; I7 on those when the prior keeps the
+  convention; I8 as "a family may not gain a hole where no row was" — a compaction and a
+  readdress pass, a delete's hole is admitted, a skip is refused at the first new hole.
+  It judged nothing before (`docs/contracts/mss_engine_invariants.md`).
+- A raw row `[[address, …], [title]]` is read as a row, not as an `(address, raw)` pair;
+  `arity_convention_holds` answers over raw rows.
+- A local-domain definition row's family is its arity — every pair, extras included —
+  and its references come before its extras, where `trailing_refs` reads; readers find a
+  definition row by shape (`local_domain.is_definition_row`), on any marker, in any family.
+- `row_address.next_row_address` is how a writer mints an address; a row whose edit
+  changes its shape moves to the family its new arity names and the writer says where.
+
+### Gadgets
+- `/healthz` reports `packages`: the install ledger against this build's catalogue.
+- The four packages above bump for the re-pinned archetypes; every other package's
+  declaration is unchanged.
+
+### The repository
+- The public suite: `micyte/tests` — 64 tests that exercise `micyte.*` alone — ships with
+  the cut, and the cut writes the public repository's own CI workflow.
+- `docs/standards/development_process.md`: how a change lands (worktree, focus-named
+  branch, the gate, PR, the tests workflow, merge, the gated deploy) and the focus registry.
+
 ## 0.3.0 — 2026-09-27
 
 - The FND store's document ids carry the hash of each document's stored MSS bitstream

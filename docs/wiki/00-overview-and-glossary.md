@@ -101,7 +101,7 @@ a sibling wiki page produced by this batch — some may not be merged yet (forwa
 references are expected).
 
 **Standards**
-- [`05-engineering-standards.md`](05-engineering-standards.md) — coding/doc standards for this codebase.
+- [`05-engineering-standards.md`](05-engineering-standards.md) — coding/doc standards for this codebase; the flow that lands a change is [`../standards/development_process.md`](../standards/development_process.md).
 
 **As-built architecture (what exists today)**
 - [`10-l1-core-engine.md`](10-l1-core-engine.md) — L1 CORE: the MOS datum-database library.

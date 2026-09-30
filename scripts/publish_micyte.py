@@ -49,6 +49,45 @@ PUBLIC_SCRIPTS = (
 )
 EXCLUDED_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache"}
 
+#: The public repository's own CI, written into every export. The suite it runs is
+#: `micyte/tests` — the tests that exercise micyte.* alone and name no private literal
+#: (`fnd_app/tests/architecture/test_the_public_suite_holds_every_micyte_only_test.py`
+#: is the ratchet) — so a public checkout verifies itself, which through v0.3.0 it could
+#: not: the public repository shipped 416 source files and zero tests.
+PUBLIC_WORKFLOW = """name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "ruff==0.15.13"
+      - run: ruff check micyte/ scripts/
+
+  pytest:
+    name: pytest (the public suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e . "pytest>=9.0.0" "pytest-subtests>=0.14.0"
+      - run: pytest micyte/tests -q
+"""
+
 
 def _gate_module():
     spec = importlib.util.spec_from_file_location("release_gate_scan", REPO_ROOT / "scripts" / "release_gate_scan.py")
@@ -126,6 +165,10 @@ def export(out: Path, *, clone: bool = True) -> Path:
     for name in PUBLIC_SCRIPTS:
         shutil.copy2(REPO_ROOT / "scripts" / name, repo / "scripts" / name)
         files += 1
+    workflow = repo / ".github" / "workflows" / "tests.yml"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text(PUBLIC_WORKFLOW, encoding="utf-8")
+    files += 1
     _run(["git", "add", "-A"], cwd=repo)
     print(f"exported {files} files into {repo} ({'clone' if cloned else 'fresh repository'})")
     return repo

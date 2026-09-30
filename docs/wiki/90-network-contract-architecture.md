@@ -1,6 +1,6 @@
 # 90 — Network & Contract Architecture
 
-> Status: **part as-built, part design-spec** (rewritten 2026-08-04)
+> Status: design-spec (rewritten 2026-08-04; the handshake, the sealed session and the packages transport are as-built and say so in their sections — `contract_formation.md`, `hosted_alias_interface.md` and `tool_package_update_contract.md` are the canonical pages for those)
 > [← Overview](00-overview-and-glossary.md)
 
 This page specifies the **network layer** for a MiCyte portal instance: how one

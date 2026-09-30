@@ -479,7 +479,7 @@ dropping a file in the stills directory holds it privately, nothing more.
 
 Add and run the tests that pin the contract for the surfaces you touched:
 
-- **Eligibility logic** — `fnd_app/tests/unit/test_tool_eligibility.py`
+- **Eligibility logic** — `micyte/tests/unit/test_tool_eligibility.py`
   exercises `recognize_applicable_tools` (extensions excluded, archetype match,
   source_kind match, hyphae-chain widening, deterministic ordering, empty/unknown
   address). Add a case that asserts your `applies_to_*` binding matches the
@@ -494,7 +494,7 @@ Add and run the tests that pin the contract for the surfaces you touched:
   confirm you didn't.
 
 Run them with the project's test runner (e.g.
-`python -m pytest fnd_app/tests/unit/test_tool_eligibility.py
+`python -m pytest micyte/tests/unit/test_tool_eligibility.py
 fnd_app/tests/integration/test_tool_palette.py
 fnd_app/tests/architecture/test_palette_eligibility_purity.py`).
 

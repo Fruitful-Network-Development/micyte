@@ -51,6 +51,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["micyte"]
+# The public suite lives at micyte/tests so a file keeps its depth when it moves there
+# from fnd_app/tests; it ships in the repository and the sdist, never in the wheel.
+exclude = ["micyte/tests"]
+
+[tool.pytest.ini_options]
+# Both suites. The public one (micyte/tests) exercises micyte.* alone and ships with
+# the cut; the FND one stays here. scripts/health_gate.sh runs them batched on the host.
+testpaths = ["micyte/tests", "fnd_app/tests"]
 
 [tool.hatch.build.targets.sdist]
 # The sdist carries the package, its licence and the docs that ship with it.
@@ -89,6 +97,8 @@ allowed-confusables = ["×", "–"]
 # is not pip-installed); allow E402 there. Tests also reuse fixtures and import
 # things they don't directly call (skipUnless guards, etc); allow F401 + F811.
 "fnd_app/tests/**/*.py" = ["F401", "F811", "E402"]
+# The public suite (micyte/tests) is the same kind of file, held to the same rules.
+"micyte/tests/**/*.py" = ["F401", "F811", "E402"]
 # Scripts under fnd_app/scripts/ do the same sys.path prepend before
 # fnd_app imports — they're CLI entry points, not library code.
 "fnd_app/scripts/**/*.py" = ["E402"]

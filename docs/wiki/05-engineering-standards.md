@@ -201,19 +201,23 @@ already make this cheap enough.
 
 | Directory | Guarantees |
 |---|---|
-| `tests/unit/` | Pure logic, one module at a time (77 files). |
-| `tests/integration/` | Multiple components wired together (34 files). |
-| `tests/architecture/` | **Layering / boundary / no-duplication / asset-manifest invariants** (~33 files). |
-| `tests/contracts/` | Port-contract conformance (8 files). |
-| `tests/adapters/` | Adapter behavior against fakes/real stores (8 files). |
-| `tests/smoke/` | End-to-end "the page actually renders / serves" checks (5 files). |
-| `tests/sandboxes/`, `tests/tools/` | Sandbox-load and tool-surface coverage. |
+| `micyte/tests/{unit,contracts,adapters,architecture}/` | The PUBLIC suite: tests that exercise `micyte.*` alone and name no live literal. Shipped by the cut and run by the public repository's own CI. |
+| `fnd_app/tests/unit/` | Pure logic, one module at a time. |
+| `fnd_app/tests/integration/` | Multiple components wired together. |
+| `fnd_app/tests/architecture/` | **Layering / boundary / no-duplication / asset-manifest invariants** — and the guards that keep the suite hermetic. |
+| `fnd_app/tests/contracts/` | Port-contract conformance. |
+| `fnd_app/tests/adapters/` | Adapter behavior against fakes/real stores. |
+| `fnd_app/tests/e2e/` | The portal booted against a PROVISIONED instance; a browser where one is installed. |
+| `fnd_app/tests/smoke/` | End-to-end "the page actually renders / serves" checks. |
 
-Run the full suite (~1187 tests) with the portal venv:
+File counts are not written here: they were (77 / 34 / ~33 / 8 / 8 / 5, "~1187 tests") and
+by 2026-09-29 the suite was 551 files and 6,400 tests. The gate counts what it runs.
 
-```bash
-python -m pytest fnd_app/tests -q
-```
+Run the suite the way the gate does — `scripts/health_gate.sh` (batched, memory-capped;
+on a 3.8 GB host `pytest fnd_app/tests` in one process is OOM-killed) — with
+`PRIVATE_DIR` pointed at an empty directory to see what a clean runner sees. CI runs the
+same files unbatched (`.github/workflows/tests.yml`). The whole flow — worktree, branch,
+PR, CI, merge, deploy — is `docs/standards/development_process.md`.
 
 Run just the architecture guards while iterating on a layering change:
 
@@ -305,8 +309,11 @@ modules so the orphan check stays green.
       `v2_portal_*.js` files.
 - [ ] **MOS is canonical?** No new on-disk datum authority; YAML stays
       transport-only.
-- [ ] **Tests pass?** `python -m pytest fnd_app/tests -q`
-      is green.
+- [ ] **Tests pass?** `scripts/health_gate.sh` is green locally (with `PRIVATE_DIR` pointed
+      at an empty directory) and the `tests` workflow is green on the PR.
+- [ ] **Right focus, right branch?** The change sits in one row of the focus registry in
+      `docs/standards/development_process.md`, on a `feat/<focus>-<slug>` branch cut in a
+      worktree — never in the live checkout.
 - [ ] **Boundary test added if you introduced a new layer rule?** A new rule
       ships with its `tests/architecture/` guard in the same PR.
 - [ ] **Asset budget respected?** New/grown shell modules are in the right

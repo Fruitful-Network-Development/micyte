@@ -26,7 +26,10 @@ def build_object_rows(doc: Any) -> list[dict[str, Any]]:
     for r in (getattr(doc, "rows", ()) or ()):
         addr = r.datum_address if hasattr(r, "datum_address") else r["datum_address"]
         raw = r.raw if hasattr(r, "raw") else r["raw"]
-        if not str(addr).startswith("4-1-"):
+        # Any layer-4 row: an object row lives in the family its ARITY names (I7), so a
+        # row with three attributes is at `4-5`. Selecting on `4-1-` hid every object
+        # the writer had placed by arity. The row's kind is its lcl marker, read below.
+        if not str(addr).startswith("4-"):
             continue
         head = raw[0]
         node = name = kind = ""
