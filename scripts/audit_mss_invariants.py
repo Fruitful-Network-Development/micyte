@@ -35,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from micyte.core.datum_ops.positional_grammars import positional_grammar
 from micyte.core.mss.invariants import DOCUMENT_INVARIANTS, check_rows
 
 
@@ -53,12 +54,13 @@ def audit(db: Path, *, tenant: str, per_document: bool, limit: int) -> int:
     connection = sqlite3.connect(uri, uri=True)
     connection.row_factory = sqlite3.Row
     query = (
-        "SELECT s.document_id, d.sandbox, d.msn_id, d.prefix, s.canonical_payload_json "
+        "SELECT s.document_id, d.sandbox, d.msn_id, d.prefix, d.name, s.canonical_payload_json "
         "FROM datum_document_semantics s LEFT JOIN documents d "
         "ON d.tenant_id = s.tenant_id AND d.document_id = s.document_id "
         "WHERE s.tenant_id = ? ORDER BY d.sandbox, s.document_id"
     )
     by_sandbox: dict[str, Counter] = defaultdict(Counter)
+    positional: dict[str, Counter] = defaultdict(Counter)
     documents = 0
     rows_seen = 0
     offenders: list[tuple[str, str, int]] = []
@@ -68,10 +70,15 @@ def audit(db: Path, *, tenant: str, per_document: bool, limit: int) -> int:
         documents += 1
         rows = _rows(record["canonical_payload_json"] or "{}")
         rows_seen += len(rows)
-        refusals = check_rows(rows, artifact=(str(record["prefix"] or "") == "art"))
+        sandbox = str(record["sandbox"] or record["prefix"] or "?")
+        # A document a positional reader owns is not held to I7: its families name roles
+        # (`positional_grammars`), and the readdress refuses it for the same reason.
+        grammar = positional_grammar(str(record["name"] or ""))
+        if grammar:
+            positional[sandbox][grammar] += 1
+        refusals = check_rows(rows, artifact=(str(record["prefix"] or "") == "art"), arity=not grammar)
         if not refusals:
             continue
-        sandbox = str(record["sandbox"] or record["prefix"] or "?")
         for refusal in refusals:
             by_sandbox[sandbox][refusal.invariant] += 1
         offenders.append((sandbox, str(record["document_id"]), len(refusals)))
@@ -92,6 +99,11 @@ def audit(db: Path, *, tenant: str, per_document: bool, limit: int) -> int:
         total.update(counts)
         print(f"{sandbox:12} " + "".join(f"{counts.get(i, 0):>7}" for i in ids))
     print(f"{'TOTAL':12} " + "".join(f"{total.get(i, 0):>7}" for i in ids))
+    if positional:
+        print("documents a positional reader owns (I7 not judged; the readdress refuses them):")
+        for sandbox in sorted(positional):
+            for grammar, count in sorted(positional[sandbox].items()):
+                print(f"{sandbox:12} {count:>7}  {grammar}")
     return 0
 
 

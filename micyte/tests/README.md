@@ -14,5 +14,6 @@ change when it moves. No `__init__.py`: these are collected as top-level test mo
 the way `fnd_app/tests` is, and the wheel excludes this directory.
 
 Sixty-one micyte-only tests still sit under `fnd_app/tests` because they name a live
-registrar address, and one because its fixtures name real parties; each moves the day
-its literal becomes a fixture constant.
+registrar address, one because its fixtures name real parties, and a handful because
+they load a script or an asset the cut does not carry; each moves the day its literal
+becomes a fixture constant or its dependency ships.
