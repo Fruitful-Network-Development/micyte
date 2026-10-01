@@ -13,7 +13,8 @@ Dry run by default. Every step prints what it did; nothing leaves this host with
    ``LICENSE``, ``README.md``, ``CHANGELOG.md``, ``pyproject.toml`` and the public scripts.
 3. Runs ``scripts/release_gate_scan.py`` against the export: a private document present or
    a sensitive literal in a public file is a refused cut (``--skip-gate`` exists for an
-   incident and says so out loud).
+   incident and says so out loud); then runs ``micyte/tests`` inside the export — what the
+   public repository's own CI will run — and refuses a cut whose suite does not pass there.
 4. Builds the wheel (``python -m build --wheel``) into ``<out>/dist``.
 5. ``--apply``: commits ``MiCyte <version>``, tags ``v<version>``, pushes, and creates the
    GitHub release with the CHANGELOG section as notes and the wheel attached.
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import re
 import shutil
 import subprocess
@@ -180,6 +182,28 @@ def gate(repo: Path) -> bool:
     return result.returncode == 0
 
 
+def run_public_suite(repo: Path) -> bool:
+    """Run ``micyte/tests`` INSIDE the export, as the public repository's CI will.
+
+    The v0.4.0 cut shipped three tests that loaded `scripts/mint_archetype_sandbox.py`
+    by path — a script the cut does not carry — and the public repository's first CI run
+    failed on collection. The export is what gets published, so the export is what runs.
+    """
+    tests = repo / "micyte" / "tests"
+    if not tests.is_dir():
+        print("public suite: none exported")
+        return True
+    env = dict(os.environ, PYTHONPATH=str(repo), PRIVATE_DIR=str(repo / ".no-private"))
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(tests), "-q", "-p", "no:cacheprovider"],
+        cwd=repo, env=env, capture_output=True, text=True, check=False)
+    tail = "\n".join(result.stdout.strip().splitlines()[-3:])
+    print(f"public suite in the export: {'PASS' if result.returncode == 0 else 'FAIL'} — {tail}")
+    if result.returncode != 0:
+        sys.stdout.write(result.stdout[-4000:])
+    return result.returncode == 0
+
+
 def build_wheel(repo: Path, out: Path) -> Path:
     dist = out / "dist"
     if dist.exists():
@@ -234,6 +258,9 @@ def main(argv: list[str] | None = None) -> int:
         print("!! RELEASE GATE SKIPPED (--skip-gate) — cutting UNGATED")
     elif not gate(repo):
         print("REFUSED: the release gate is red on the export")
+        return 1
+    if not run_public_suite(repo):
+        print("REFUSED: the public suite does not pass in the export")
         return 1
     wheel = build_wheel(repo, args.out)
     if not args.apply:

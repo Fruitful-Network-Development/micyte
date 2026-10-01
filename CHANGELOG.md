@@ -5,6 +5,28 @@ repository is tagged `v<version>` and the wheel on its release page is the artif
 `docs/standards/release_and_versioning.md` is the process; `scripts/publish_micyte.py` is
 the cut. A section is added when the version is bumped, not after.
 
+## 0.4.1 — 2026-09-30
+
+- The public suite passes in the public repository. 0.4.0's cut shipped five tests that
+  load a script (`scripts/mint_archetype_sandbox.py`, which carries a live address) or an
+  asset (the portal's built sprite) the cut does not carry, and the public repository's
+  first CI run failed on collection. Those tests are FND's (the ratchet now says so: a
+  test that reaches a script or a path the cut does not ship is not public), and
+  `scripts/publish_micyte.py` runs `micyte/tests` inside the export before it builds the
+  wheel, so the release gate refuses a cut whose suite would not pass where it is
+  published.
+- The class library and the viewscopes keep their families. 0.4.0's readdress moved 63
+  `kind_*` and `viewscope_*` documents with the archetypes, and their readers — which
+  select rows BY FAMILY (header 4-1, members 4-2, slots 4-3; container 4-1, slots 4-2),
+  as their modules say — went blind: every viewscope pane drew zero groups and the
+  calendar found zero logs, while the archetype registry parsed identically. The library
+  was restored from the pre-window backup and readdressed again under one rule,
+  `datum_ops.positional_grammars`: a document a positional reader owns is not held to I7.
+  The readdress refuses such a document whatever its flags say, the audit reports it
+  apart instead of as a finding, and the lock is re-cut — the 57 archetypes keep 0.4.0's
+  hashes (the packages' pins are unchanged), the 63 owned documents return to theirs.
+  No engine change.
+
 ## 0.4.0 — 2026-09-30
 
 - The archetype library keeps the arity convention: its 100 documents' 234 positional
